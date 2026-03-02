@@ -2,7 +2,9 @@
 
 **Beyond Chat — Your Team's Central Intelligence.**
 
-Most AI tools are stuck in 1:1 conversations. Tower is built for the next leap: **n:1 process automation** — where an entire team shares one AI that learns, remembers, and grows with them.
+Tower is not a conversation tool. It's a **task delegator** — and a **delegator builder.**
+
+Most AI tools are stuck in 1:1 conversations. Tower is built for the next leap: **n:1 process automation** — where an entire team delegates work to one AI that learns, remembers, and builds its own tools to get better at what you ask it to do.
 
 [**한국어 README**](README.ko.md)
 
@@ -94,23 +96,23 @@ The longer your team uses Tower, the more it knows. The more it knows, the bette
 
 ---
 
-## From Conversation to Collaboration
+## From Conversation to Delegation
 
 Most AI tools give you a chat window. You type. It responds. The conversation ends. Tomorrow you start over.
 
-Tower is built on a different premise: **AI should be a coworker, not a chatbot.**
+Tower is built on a different premise: **you don't talk to AI — you delegate to it.**
 
-When you work through Tower, you're not sending messages into a void — you're directing an agent that reads your files, writes code, generates documents, commits changes, and remembers what it learned. You watch it work in real time. You course-correct mid-stream. You build on what it built yesterday.
+When you work through Tower, you're not sending messages into a void — you're handing off real tasks to an agent that reads your files, writes code, generates documents, commits changes, and remembers what it learned. You watch it work in real time. You course-correct mid-stream. You build on what it built yesterday.
 
-This isn't a new interface for the same thing. It's a different architecture for a different relationship with AI.
+And here's the twist: Tower doesn't just execute tasks — it **builds the tools to execute them better next time.** A workflow you delegate once becomes a skill the whole team can reuse. That's what makes it a delegator *builder*, not just a delegator.
 
-| Chatting with AI | Working with AI |
+| Chatting with AI | Delegating to AI |
 |---|---|
-| One question, one answer | Persistent sessions across days and weeks |
+| One question, one answer | Hand off a task, get back a result |
 | Context resets every conversation | Memory accumulates across the team |
 | Output lands in your clipboard | Output lands in version-controlled files |
 | Only you benefit | The whole team benefits |
-| You talk *to* AI | You and AI build *together* |
+| You talk *to* AI | AI works *for* you |
 
 ---
 
@@ -127,12 +129,15 @@ Individual local history is a silo. Tower integrates your team's business logic,
 
 What one person learns becomes what Claude knows for everyone.
 
-### 🛠 Self-Evolving Skill System
+### 🛠 Self-Evolving Skill System — The Delegator Builder
 
-Stop waiting for updates to get new features. Tower ships with 20 bundled skills — brainstorming, TDD, debugging, code review, planning, UI/UX design — and is designed to **create, test, and improve its own skills.**
+This is what makes Tower fundamentally different. It doesn't just run tasks — it **builds the machinery to run them better.**
+
+Tower ships with 20+ bundled skills — brainstorming, TDD, debugging, code review, planning, UI/UX design — and is designed to **create, test, and improve its own skills.**
 
 - **Autonomous Tooling** — It can architect new scripts and workflows to solve your team's unique problems
 - **Persistent Mastery** — Once a skill is learned, it's stored and available for the entire team
+- **Compound Delegation** — Today's one-off task becomes tomorrow's one-click skill
 
 Your team starts at 80%, not 20%. And it only goes up from there.
 
