@@ -191,13 +191,13 @@ Tower runs in any browser. On your phone, that unlocks something powerful:
 **Sessions on the go.** Waiting for a flight? Riding the subway? Spin up a new session, dictate a batch of instructions, and let Claude work while you move. Spin up five sessions in a row if you want. Come back to your desk and everything is there — files committed, context saved, ready to continue.
 
 ```
-Your phone (anywhere)          Your server (always on)
-    ┌──────────┐               ┌──────────────────┐
-    │  Voice   │──── wifi ────▶│  Claude Code      │
-    │  input   │   or cell     │  Full CPU/RAM     │
-    │  + eyes  │◀─────────────│  Git, files, DB   │
-    └──────────┘   live result │  20+ skills       │
-                               └──────────────────┘
+  Your phone (anywhere)             Your server (always on)
+  ┌─────────────────┐               ┌─────────────────────┐
+  │                 │── wifi/cell ──▶│  Claude Code         │
+  │  Voice + eyes   │               │  Full CPU/RAM        │
+  │                 │◀── live ──────│  Git, files, DB      │
+  └─────────────────┘    result     │  20+ skills          │
+                                    └─────────────────────┘
 ```
 
 This is what "mobile AI" actually means — not a stripped-down chat app, but full access to your team's entire AI workspace from anywhere in the world.
