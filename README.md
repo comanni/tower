@@ -116,8 +116,8 @@ Your phone is a remote control for your server. Tap the mic, speak, and Claude e
   │                 │── wifi/cell ──▶│  Claude Code         │
   │  Voice + eyes   │               │  Full CPU/RAM        │
   │                 │◀── live ──────│  Git, files, DB      │
-  └─────────────────┘    result     │  20+ skills          │
-                                    └─────────────────────┘
+  │                 │    result     │  20+ skills          │
+  └─────────────────┘               └─────────────────────┘
 ```
 
 ---
