@@ -265,13 +265,13 @@ See **[INSTALL.md](INSTALL.md)** for detailed setup, environment variables, proj
 ### Chat with Claude Code — in the browser
 
 <p align="center">
-  <video src="capture.mp4" width="720" controls></video>
+  <img src="capture.gif" alt="Tower demo — chatting with Claude Code in the browser" width="720" />
 </p>
 
 ### Build and share dashboards — on the fly
 
 <p align="center">
-  <video src="capture2.mp4" width="720" controls></video>
+  <img src="capture2.gif" alt="Tower demo — building and sharing dashboards" width="720" />
 </p>
 
 ---
