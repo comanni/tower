@@ -267,36 +267,77 @@ export function InputBox({ onSend, onAbort }: InputBoxProps) {
       return;
     }
 
-    // Handle OS file drops
+    // Handle OS file drops — upload to server, pass path to AI
     const files = e.dataTransfer.files;
     if (files.length === 0) return;
 
+    // Small text files (<1MB) can still be inlined for quick context
+    const serverFiles: File[] = [];
     for (const file of Array.from(files)) {
-      // Skip large files (>1MB for text reading)
-      if (file.size > 1024 * 1024) {
-        useChatStore.getState().addAttachment({
-          id: `upload-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          type: 'upload',
-          label: `${file.name} (too large)`,
-          content: `[File "${file.name}" is too large for inline reading (${(file.size / 1024 / 1024).toFixed(1)}MB). Use file tree upload instead.]`,
-        });
-        continue;
+      const isBinary = /\.(pdf|doc|docx|xls|xlsx|ppt|pptx|zip|tar|gz|rar|7z|png|jpg|jpeg|gif|bmp|webp|svg|mp3|mp4|mov|avi|wav)$/i.test(file.name);
+      if (isBinary || file.size > 1024 * 1024) {
+        serverFiles.push(file);
+      } else {
+        // Small text file — inline as before
+        try {
+          const text = await file.text();
+          useChatStore.getState().addAttachment({
+            id: `upload-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            type: 'upload',
+            label: file.name,
+            content: text,
+          });
+        } catch {
+          serverFiles.push(file);
+        }
+      }
+    }
+
+    // Upload binary/large files to server
+    if (serverFiles.length > 0) {
+      const formData = new FormData();
+      for (const file of serverFiles) {
+        formData.append('files', file);
       }
       try {
-        const text = await file.text();
-        useChatStore.getState().addAttachment({
-          id: `upload-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          type: 'upload',
-          label: file.name,
-          content: text,
-        });
+        const token = localStorage.getItem('token');
+        const headers: Record<string, string> = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const res = await fetch('/api/files/chat-upload', { method: 'POST', headers, body: formData });
+        const data = await res.json();
+        if (!res.ok) {
+          useChatStore.getState().addAttachment({
+            id: `upload-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            type: 'upload',
+            label: 'Upload failed',
+            content: `[Upload failed: ${data.error || 'Unknown error'}]`,
+          });
+        } else {
+          for (const r of data.results) {
+            if (r.error) {
+              useChatStore.getState().addAttachment({
+                id: `upload-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                type: 'upload',
+                label: `${r.name} (failed)`,
+                content: `[Upload failed: ${r.error}]`,
+              });
+            } else {
+              // Use 'file' type so buildMessage generates [file: /path] — AI can read it
+              useChatStore.getState().addAttachment({
+                id: `upload-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                type: 'file',
+                label: r.name,
+                content: r.path,
+              });
+            }
+          }
+        }
       } catch {
-        // Binary file — just note it
         useChatStore.getState().addAttachment({
           id: `upload-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
           type: 'upload',
-          label: file.name,
-          content: `[Binary file: ${file.name} (${(file.size / 1024).toFixed(1)}KB)]`,
+          label: 'Upload failed',
+          content: '[Upload failed: network error]',
         });
       }
     }

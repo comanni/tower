@@ -57,13 +57,15 @@ function useTypewriter(fullText: string, isActive: boolean): string {
   return fullText.slice(0, displayedLength);
 }
 
-function TypewriterText({ content, showMetrics, mdComponents }: {
+function TypewriterText({ content, showMetrics, isLastAssistant, mdComponents }: {
   content: string;
   showMetrics: boolean;
+  isLastAssistant?: boolean;
   mdComponents: Record<string, any>;
 }) {
-  const isStreaming = useChatStore((s) => showMetrics ? s.isStreaming : false);
-  const isActive = !!(showMetrics && isStreaming);
+  // Only animate the LAST assistant message — not all messages with showMetrics
+  const isStreaming = useChatStore((s) => isLastAssistant ? s.isStreaming : false);
+  const isActive = !!(isLastAssistant && isStreaming);
   const displayedText = useTypewriter(content, isActive);
   const isTyping = isActive && displayedText.length < content.length;
 
@@ -291,6 +293,7 @@ export function MessageBubble({ message, onFileClick, onRetry, showMetrics, isLa
                         key={segKey}
                         content={seg.content}
                         showMetrics={!!showMetrics && segKey === lastTextSegKey}
+                        isLastAssistant={!!isLastAssistant && segKey === lastTextSegKey}
                         mdComponents={mdComponents}
                       />
                     );

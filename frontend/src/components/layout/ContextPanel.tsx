@@ -43,6 +43,26 @@ function PdfPreview({ filePath }: { filePath: string }) {
   );
 }
 
+function ImagePreview({ filePath }: { filePath: string }) {
+  const token = localStorage.getItem('token') || '';
+  const src = `/api/files/serve?path=${encodeURIComponent(filePath)}&token=${encodeURIComponent(token)}`;
+  return (
+    <div className="absolute inset-0 flex items-center justify-center bg-surface-900 p-4">
+      <img src={src} alt={filePath.split('/').pop()} className="max-w-full max-h-full object-contain" />
+    </div>
+  );
+}
+
+function VideoPreview({ filePath }: { filePath: string }) {
+  const token = localStorage.getItem('token') || '';
+  const src = `/api/files/serve?path=${encodeURIComponent(filePath)}&token=${encodeURIComponent(token)}`;
+  return (
+    <div className="absolute inset-0 flex items-center justify-center bg-black">
+      <video src={src} controls className="max-w-full max-h-full" />
+    </div>
+  );
+}
+
 interface ContextPanelProps {
   onSave?: (path: string, content: string) => void;
   onReload?: (path: string) => void;
@@ -62,7 +82,7 @@ export function ContextPanel({ onSave, onReload, onMobileClose }: ContextPanelPr
   const setContextPanelExpanded = useFileStore((s) => s.setContextPanelExpanded);
 
   useEffect(() => {
-    if (openFile && (openFile.language === 'html' || openFile.language === 'markdown' || openFile.language === 'pdf')) {
+    if (openFile && ['html', 'markdown', 'pdf', 'image', 'video'].includes(openFile.language)) {
       setContextPanelTab('preview');
     }
   }, [openFile?.path]);
@@ -138,10 +158,10 @@ export function ContextPanel({ onSave, onReload, onMobileClose }: ContextPanelPr
     };
   }, [openFile.path]);
 
-  const isMarkdown = openFile.language === 'markdown';
-  const isHtml = openFile.language === 'html';
-  const isPdf = openFile.language === 'pdf';
-  const hasPreview = isMarkdown || isHtml || isPdf;
+  const PREVIEW_ONLY = new Set(['image', 'pdf', 'video']);
+  const PREVIEWABLE = new Set(['image', 'pdf', 'video', 'html', 'markdown']);
+  const hasPreview = PREVIEWABLE.has(openFile.language);
+  const isPreviewOnly = PREVIEW_ONLY.has(openFile.language);
   const rawName = openFile.path.split('/').pop() || '';
   // Fix double-encoded Korean filenames (latin1→utf8 + NFD→NFC)
   let fileName = rawName;
@@ -174,7 +194,7 @@ export function ContextPanel({ onSave, onReload, onMobileClose }: ContextPanelPr
           <span className="text-primary-400 text-xs">Modified</span>
         )}
 
-        {hasPreview && (
+        {hasPreview && !isPreviewOnly && (
           <div className="flex bg-surface-800 rounded-md p-0.5">
             <button
               className={`px-2 py-0.5 text-xs rounded ${contextPanelTab === 'preview' ? 'bg-surface-700 text-white' : 'text-gray-400'}`}
@@ -251,38 +271,38 @@ export function ContextPanel({ onSave, onReload, onMobileClose }: ContextPanelPr
       )}
 
       {/* Content */}
-      {(isHtml || isPdf) && contextPanelTab === 'preview' ? (
+      {isPreviewOnly || (hasPreview && contextPanelTab === 'preview') ? (
         <div className="flex-1 min-h-0 relative">
-          {isPdf ? (
+          {openFile.language === 'image' ? (
+            <ImagePreview filePath={openFile.path} />
+          ) : openFile.language === 'video' ? (
+            <VideoPreview filePath={openFile.path} />
+          ) : openFile.language === 'pdf' ? (
             <PdfPreview filePath={openFile.path} />
-          ) : (
+          ) : openFile.language === 'html' ? (
             <HtmlPreview content={openFile.content} />
-          )}
+          ) : openFile.language === 'markdown' ? (
+            <div className="absolute inset-0 overflow-y-auto overflow-x-hidden">
+              <div className="prose prose-invert prose-sm max-w-none p-4">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  rehypePlugins={[rehypeRaw, rehypeHighlight]}
+                  components={mdComponents}
+                >
+                  {openFile.content}
+                </ReactMarkdown>
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : (
         <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
-          {isMarkdown && contextPanelTab === 'preview' ? (
-            <div className="prose prose-invert prose-sm max-w-none p-4">
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                rehypePlugins={[rehypeRaw, rehypeHighlight]}
-                components={mdComponents}
-              >
-                {openFile.content}
-              </ReactMarkdown>
-            </div>
-          ) : isPdf ? (
-            <div className="flex-1 flex items-center justify-center text-gray-400 text-sm p-4">
-              Use the Preview tab to view PDF files
-            </div>
-          ) : (
-            <CodeEditor
-              value={openFile.content}
-              language={openFile.language}
-              onChange={updateContent}
-              onSave={handleSave}
-            />
-          )}
+          <CodeEditor
+            value={openFile.content}
+            language={openFile.language}
+            onChange={updateContent}
+            onSave={handleSave}
+          />
         </div>
       )}
     </div>

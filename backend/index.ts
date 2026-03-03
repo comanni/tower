@@ -13,6 +13,7 @@ import { stopFileWatcher } from './services/file-system.js';
 import { initWorkspaceRepo } from './services/git-manager.js';
 import { resumeOrphanedTaskMonitoring, hasMonitoredTasks, stopAllMonitors } from './services/task-runner.js';
 import { cleanupOrphanedSdkProcesses, stopOrphanMonitor, gracefulShutdown } from './services/claude-sdk.js';
+import { startScheduler, stopScheduler } from './services/task-scheduler.js';
 
 // CRITICAL: Remove CLAUDECODE env var before anything else
 delete process.env.CLAUDECODE;
@@ -94,12 +95,16 @@ server.listen(config.port, config.host, () => {
   // to run alongside monitored tasks — active task processes won't be touched.
   resumeOrphanedTaskMonitoring((type, payload) => broadcastToAll({ type, ...payload }));
   cleanupOrphanedSdkProcesses();
+
+  // Start scheduled-task poller (checks every 30s for due tasks)
+  startScheduler((type, payload) => broadcastToAll({ type, ...payload }));
 });
 
 // Graceful shutdown — let orphan CLI processes keep running
 process.on('SIGINT', () => {
   console.log('\nShutting down...');
   gracefulShutdown('SIGINT');
+  stopScheduler();
   stopOrphanMonitor();
   stopAllMonitors();
   stopFileWatcher();
@@ -109,6 +114,7 @@ process.on('SIGINT', () => {
 
 process.on('SIGTERM', () => {
   gracefulShutdown('SIGTERM');
+  stopScheduler();
   stopOrphanMonitor();
   stopAllMonitors();
   stopFileWatcher();

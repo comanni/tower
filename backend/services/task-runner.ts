@@ -1,8 +1,9 @@
 import { executeQuery, abortSession } from './claude-sdk.js';
 import { createSession, updateSession, getSession } from './session-manager.js';
-import { updateTask, getTask, getTasks } from './task-manager.js';
+import { updateTask, getTask, getTasks, type ScheduleCron } from './task-manager.js';
 import { saveMessage, attachToolResultInDb } from './message-store.js';
 import { buildDamageControl, buildPathEnforcement, type TowerRole } from './damage-control.js';
+import { calculateNextRun } from './task-scheduler.js';
 import { v4 as uuidv4 } from 'uuid';
 import { execSync } from 'child_process';
 import fs from 'fs';
@@ -592,6 +593,35 @@ async function runTaskAgent(
         claudeSessionId,
         progressSummary: finalSummary,
       });
+
+      // ── Recurring schedule reset ──
+      // If this task has a cron pattern, reset it to 'todo' with next scheduled_at
+      const completedTask = getTask(taskId);
+      if (completedTask?.scheduleCron) {
+        try {
+          const cronObj: ScheduleCron = JSON.parse(completedTask.scheduleCron);
+          const nextRun = calculateNextRun(cronObj);
+          updateTask(taskId, {
+            status: 'todo',
+            scheduledAt: nextRun.toISOString(),
+            scheduleEnabled: true,
+            sessionId: null as any,
+            progressSummary: [],
+            completedAt: null as any,
+          });
+          broadcastToAll('task_update', {
+            taskId,
+            status: 'todo',
+            scheduledAt: nextRun.toISOString(),
+            scheduleEnabled: true,
+            sessionId: null,
+            progressSummary: [],
+          });
+          console.log(`[task-runner] Recurring task "${completedTask.title}" rescheduled → ${nextRun.toISOString()}`);
+        } catch (err: any) {
+          console.error(`[task-runner] Failed to reschedule recurring task ${taskId.slice(0, 8)}:`, err.message);
+        }
+      }
     }
 
     // Notify viewers: session done streaming (clears isStreaming in chat + sidebar indicator)

@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { config } from '../config.js';
+import { extractTextFromContent } from '../utils/text.js';
 
 let db: Database.Database;
 
@@ -152,6 +153,15 @@ function initSchema(db: Database.Database) {
   try { db.exec(`ALTER TABLE tasks ADD COLUMN model TEXT DEFAULT 'claude-opus-4-6'`); } catch {}
   try { db.exec(`ALTER TABLE tasks ADD COLUMN archived INTEGER DEFAULT 0`); } catch {}
 
+  // Scheduled tasks migrations
+  try { db.exec(`ALTER TABLE tasks ADD COLUMN scheduled_at TEXT`); } catch {}
+  try { db.exec(`ALTER TABLE tasks ADD COLUMN schedule_cron TEXT`); } catch {}
+  try { db.exec(`ALTER TABLE tasks ADD COLUMN schedule_enabled INTEGER DEFAULT 0`); } catch {}
+  // Index for efficient scheduler tick queries
+  try {
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_schedule ON tasks(schedule_enabled, scheduled_at) WHERE schedule_enabled = 1`);
+  } catch {}
+
   // Messages turn-metrics migrations
   try { db.exec(`ALTER TABLE messages ADD COLUMN duration_ms INTEGER`); } catch {}
   try { db.exec(`ALTER TABLE messages ADD COLUMN input_tokens INTEGER`); } catch {}
@@ -176,6 +186,72 @@ function initSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_shares_owner ON shares(owner_id);
     CREATE INDEX IF NOT EXISTS idx_shares_target ON shares(target_user_id);
   `);
+
+  // FTS5 virtual tables for search (trigram tokenizer for Korean support)
+  try {
+    db.exec(`
+      CREATE VIRTUAL TABLE sessions_fts USING fts5(
+        name, summary,
+        content='',
+        tokenize='trigram'
+      );
+    `);
+  } catch {} // already exists
+
+  try {
+    db.exec(`
+      CREATE VIRTUAL TABLE messages_fts USING fts5(
+        body, session_id UNINDEXED,
+        content='',
+        tokenize='trigram'
+      );
+    `);
+  } catch {} // already exists
+
+  // Populate FTS from existing data (idempotent — only runs if FTS is empty)
+  const ftsCount = (db.prepare('SELECT count(*) as cnt FROM sessions_fts').get() as any).cnt;
+  if (ftsCount === 0) {
+    const sessionCount = (db.prepare('SELECT count(*) as cnt FROM sessions').get() as any).cnt;
+    if (sessionCount > 0) {
+      db.exec(`
+        INSERT INTO sessions_fts(rowid, name, summary)
+          SELECT rowid, name, COALESCE(summary, '') FROM sessions;
+      `);
+      console.log('[db] sessions_fts populated from existing data');
+    }
+  }
+
+  const msgFtsCount = (db.prepare('SELECT count(*) as cnt FROM messages_fts').get() as any).cnt;
+  if (msgFtsCount === 0) {
+    populateMessagesFts(db);
+  }
+}
+
+function populateMessagesFts(db: Database.Database) {
+  const rows = db.prepare(
+    `SELECT rowid, session_id, content FROM messages WHERE role IN ('user', 'assistant')`
+  ).all() as { rowid: number; session_id: string; content: string }[];
+
+  if (rows.length === 0) return;
+
+  const insert = db.prepare(
+    'INSERT INTO messages_fts(rowid, body, session_id) VALUES (?, ?, ?)'
+  );
+
+  let count = 0;
+  const tx = db.transaction(() => {
+    for (const row of rows) {
+      const text = extractTextFromContent(row.content);
+      if (text.trim()) {
+        insert.run(row.rowid, text, row.session_id);
+        count++;
+      }
+    }
+  });
+  tx();
+  if (count > 0) {
+    console.log(`[db] messages_fts populated: ${count} messages indexed`);
+  }
 }
 
 export function closeDb() {

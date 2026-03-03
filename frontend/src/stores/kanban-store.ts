@@ -13,6 +13,9 @@ export interface TaskMeta {
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
+  scheduledAt: string | null;
+  scheduleCron: string | null;
+  scheduleEnabled: boolean;
 }
 
 interface KanbanState {
@@ -31,13 +34,29 @@ export const useKanbanStore = create<KanbanState>((set) => ({
   tasks: [],
   loading: false,
 
-  setTasks: (tasks) => set({ tasks }),
+  setTasks: (tasks) => set((s) => {
+    // If store is empty, just set directly
+    if (s.tasks.length === 0) return { tasks };
+    // Merge: prefer the version with the later updatedAt to avoid HTTP fetch
+    // overwriting fresher WebSocket updates (race condition protection)
+    const storeMap = new Map(s.tasks.map((t) => [t.id, t]));
+    const merged = tasks.map((incoming) => {
+      const existing = storeMap.get(incoming.id);
+      if (existing && existing.updatedAt > incoming.updatedAt) {
+        return existing; // Store has a fresher version (from WS task_update)
+      }
+      return incoming;
+    });
+    return { tasks: merged };
+  }),
 
   addTask: (task) => set((s) => ({ tasks: [...s.tasks, task] })),
 
   updateTask: (taskId, updates) =>
     set((s) => ({
-      tasks: s.tasks.map((t) => (t.id === taskId ? { ...t, ...updates } : t)),
+      tasks: s.tasks.map((t) => (t.id === taskId
+        ? { ...t, ...updates, updatedAt: new Date().toISOString() }
+        : t)),
     })),
 
   removeTask: (taskId) =>

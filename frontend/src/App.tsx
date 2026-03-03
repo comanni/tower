@@ -271,14 +271,14 @@ function App() {
   }, [token, addSession, setActiveSessionId, clearMessages, setActiveSession]);
 
   const handleSelectSession = useCallback(async (session: SessionMeta) => {
-    // Skip if already on this session
-    const currentId = useSessionStore.getState().activeSessionId;
-    if (currentId === session.id) return;
-
     // Always switch to chat view when selecting a session (e.g. from kanban sidebar)
     if (useSessionStore.getState().activeView !== 'chat') {
       useSessionStore.getState().setActiveView('chat');
     }
+
+    // Skip if already on this session (but view switch above still runs)
+    const currentId = useSessionStore.getState().activeSessionId;
+    if (currentId === session.id) return;
 
     // DON'T abort streaming — let the SDK query run in the background and save to DB.
     // When user switches back, messages are loaded from DB.

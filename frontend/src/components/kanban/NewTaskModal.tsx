@@ -200,6 +200,9 @@ export function NewTaskModal({ onClose, onCreated }: NewTaskModalProps) {
   const [model, setModel] = useState('claude-opus-4-6');
   const [submitting, setSubmitting] = useState(false);
   const [pastCwds, setPastCwds] = useState<string[]>([]);
+  const [attachedFiles, setAttachedFiles] = useState<{ name: string; path: string }[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch past CWDs on mount
   useEffect(() => {
@@ -219,10 +222,43 @@ export function NewTaskModal({ onClose, onCreated }: NewTaskModalProps) {
       .catch(() => {});
   }, [sessions]);
 
+  const handleFileUpload = async (fileList: FileList) => {
+    if (fileList.length === 0) return;
+    setUploading(true);
+    const formData = new FormData();
+    for (const file of Array.from(fileList)) {
+      formData.append('files', file);
+    }
+    try {
+      const token = localStorage.getItem('token');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch('/api/files/chat-upload', { method: 'POST', headers, body: formData });
+      const data = await res.json();
+      if (res.ok) {
+        const ok = (data.results || []).filter((r: any) => !r.error);
+        setAttachedFiles((prev) => [...prev, ...ok.map((r: any) => ({ name: r.name, path: r.path }))]);
+      }
+    } catch (err) {
+      console.error('File upload failed:', err);
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   const handleSubmit = async () => {
     if (!title.trim() || !cwd.trim()) return;
     setSubmitting(true);
     try {
+      // Append file references to description
+      let fullDescription = description.trim();
+      if (attachedFiles.length > 0) {
+        const fileRefs = attachedFiles.map((f) => `[file: ${f.path}]`).join('\n');
+        fullDescription = fullDescription
+          ? `${fullDescription}\n\n## Attached Files\n${fileRefs}`
+          : `## Attached Files\n${fileRefs}`;
+      }
       const token = localStorage.getItem('token');
       const res = await fetch('/api/tasks', {
         method: 'POST',
@@ -230,7 +266,7 @@ export function NewTaskModal({ onClose, onCreated }: NewTaskModalProps) {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ title: title.trim(), description: description.trim(), cwd: cwd.trim(), model }),
+        body: JSON.stringify({ title: title.trim(), description: fullDescription, cwd: cwd.trim(), model }),
       });
       if (res.ok) {
         const task = await res.json();
@@ -273,6 +309,53 @@ export function NewTaskModal({ onClose, onCreated }: NewTaskModalProps) {
               rows={4}
               className="w-full px-3 py-2 text-sm bg-surface-800 border border-surface-700 rounded-lg text-gray-200 placeholder:text-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
             />
+          </div>
+
+          {/* File Attachments */}
+          <div>
+            <label className="text-xs text-gray-400 mb-1 block">Attachments</label>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(e) => e.target.files && handleFileUpload(e.target.files)}
+            />
+            <div className="flex flex-wrap gap-1.5 items-center">
+              {attachedFiles.map((f, i) => (
+                <span
+                  key={i}
+                  className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-surface-750 border border-surface-600 rounded text-gray-300"
+                >
+                  <svg className="w-3 h-3 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                  </svg>
+                  <span className="max-w-[120px] truncate">{f.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => setAttachedFiles((prev) => prev.filter((_, j) => j !== i))}
+                    className="text-gray-500 hover:text-red-400 ml-0.5"
+                  >
+                    &times;
+                  </button>
+                </span>
+              ))}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="inline-flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-gray-200 border border-dashed border-surface-600 hover:border-surface-500 rounded transition-colors"
+              >
+                {uploading ? (
+                  <span className="animate-spin w-3 h-3 border border-gray-400 border-t-transparent rounded-full" />
+                ) : (
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                )}
+                {uploading ? 'Uploading...' : 'Add file'}
+              </button>
+            </div>
           </div>
 
           <div className="flex gap-3">

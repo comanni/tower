@@ -126,7 +126,7 @@ export function ChatPanel({ onSend, onAbort, onFileClick, onAnswerQuestion }: Ch
   const handleScroll = useCallback(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
-    isNearBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
+    isNearBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 30;
   }, []);
 
   // Snap to bottom when new messages arrive (if user is near bottom)
@@ -184,7 +184,7 @@ export function ChatPanel({ onSend, onAbort, onFileClick, onAnswerQuestion }: Ch
           )}
 
           {mergedMessages.map((msg, idx) => (
-            <MessageBubble key={msg.id} message={msg} onFileClick={onFileClick} onRetry={onSend} showMetrics={msg.role === 'assistant' && (msg.durationMs != null || (idx === lastAssistantIndex && !isWaitingForAssistant))} isLastAssistant={idx === lastAssistantIndex} />
+            <MessageBubble key={msg.id} message={msg} onFileClick={onFileClick} onRetry={onSend} showMetrics={msg.role === 'assistant' && (msg.durationMs != null || (idx === lastAssistantIndex && !isWaitingForAssistant))} isLastAssistant={idx === lastAssistantIndex && !isWaitingForAssistant} />
           ))}
 
           {isWaitingForAssistant && (

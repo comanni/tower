@@ -1,4 +1,5 @@
 import { getDb } from '../db/schema.js';
+import { extractTextFromContent } from '../utils/text.js';
 
 export interface StoredMessage {
   id: string;
@@ -21,6 +22,20 @@ export function saveMessage(
   db.prepare(
     `INSERT OR REPLACE INTO messages (id, session_id, role, content, parent_tool_use_id) VALUES (?, ?, ?, ?, ?)`
   ).run(msg.id, sessionId, msg.role, contentStr, msg.parentToolUseId || null);
+
+  // FTS sync (index user/assistant text only)
+  if (msg.role === 'user' || msg.role === 'assistant') {
+    const text = extractTextFromContent(contentStr);
+    if (text.trim()) {
+      try {
+        const row = db.prepare('SELECT rowid FROM messages WHERE id = ?').get(msg.id) as any;
+        if (row) {
+          db.prepare('DELETE FROM messages_fts WHERE rowid = ?').run(row.rowid);
+          db.prepare('INSERT INTO messages_fts(rowid, body, session_id) VALUES (?, ?, ?)').run(row.rowid, text, sessionId);
+        }
+      } catch (err) { console.error('[msg-store] FTS sync failed:', err); }
+    }
+  }
 }
 
 export function getMessages(sessionId: string): StoredMessage[] {
@@ -79,5 +94,6 @@ export function updateMessageMetrics(
 
 export function deleteMessages(sessionId: string): void {
   const db = getDb();
+  try { db.prepare('DELETE FROM messages_fts WHERE session_id = ?').run(sessionId); } catch {}
   db.prepare(`DELETE FROM messages WHERE session_id = ?`).run(sessionId);
 }

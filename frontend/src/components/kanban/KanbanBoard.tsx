@@ -14,6 +14,7 @@ import { useSessionStore } from '../../stores/session-store';
 import { KanbanColumn } from './KanbanColumn';
 import { KanbanCard } from './KanbanCard';
 import { NewTaskModal } from './NewTaskModal';
+import { SchedulePopover } from './SchedulePopover';
 
 const COLUMNS: { id: TaskMeta['status']; title: string; color: string }[] = [
   { id: 'todo', title: 'Todo', color: 'text-gray-400' },
@@ -25,6 +26,7 @@ export function KanbanBoard() {
   const { tasks, setTasks, setLoading } = useKanbanStore();
   const [activeTask, setActiveTask] = useState<TaskMeta | null>(null);
   const [showNewTask, setShowNewTask] = useState(false);
+  const [scheduleTaskId, setScheduleTaskId] = useState<string | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -131,6 +133,31 @@ export function KanbanBoard() {
     }
   };
 
+  const handleScheduleSave = async (schedule: {
+    scheduledAt: string | null;
+    scheduleCron: string | null;
+    scheduleEnabled: boolean;
+  }) => {
+    if (!scheduleTaskId) return;
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`/api/tasks/${scheduleTaskId}`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(schedule),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        useKanbanStore.getState().updateTask(scheduleTaskId, updated);
+      }
+    } catch (err) {
+      console.error('Failed to save schedule:', err);
+    }
+    setScheduleTaskId(null);
+  };
+
+  const scheduleTask = scheduleTaskId ? tasks.find((t) => t.id === scheduleTaskId) : null;
+
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden p-4">
       {/* Board header */}
@@ -163,6 +190,7 @@ export function KanbanBoard() {
               onDeleteTask={handleDeleteTask}
               onSpawnTask={onSpawnTask}
               onAbortTask={onAbortTask}
+              onScheduleTask={(taskId) => setScheduleTaskId(taskId)}
             />
           ))}
         </div>
@@ -173,6 +201,20 @@ export function KanbanBoard() {
           ) : null}
         </DragOverlay>
       </DndContext>
+
+      {/* Schedule Popover */}
+      {scheduleTask && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
+          <SchedulePopover
+            taskId={scheduleTask.id}
+            currentScheduledAt={scheduleTask.scheduledAt}
+            currentScheduleCron={scheduleTask.scheduleCron}
+            currentScheduleEnabled={scheduleTask.scheduleEnabled}
+            onSave={handleScheduleSave}
+            onClose={() => setScheduleTaskId(null)}
+          />
+        </div>
+      )}
 
       {showNewTask && (
         <NewTaskModal

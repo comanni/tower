@@ -733,6 +733,8 @@ router.get('/files/serve', (req, res) => {
       bmp: 'image/bmp',
       ico: 'image/x-icon',
       svg: 'image/svg+xml',
+      mp4: 'video/mp4',
+      webm: 'video/webm',
     };
 
     // Download mode: stream file as attachment regardless of type

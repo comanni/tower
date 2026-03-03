@@ -8,6 +8,7 @@ import { useGitStore } from '../stores/git-store';
 import { parseSDKMessage, normalizeContentBlocks } from '../utils/message-parser';
 import { shouldDropSessionMessage, shouldResetAssistantRef } from '../utils/session-filters';
 import { toastSuccess, toastError, toastWarning } from '../utils/toast';
+import { notifyTaskComplete, requestNotificationPermission } from '../utils/notify';
 import { useKanbanStore } from '../stores/kanban-store';
 
 /** Debounce timer for auto-reload of externally changed files */
@@ -125,6 +126,8 @@ export function useClaudeChat() {
   const handleMessage = useCallback((data: any) => {
     switch (data.type) {
       case 'connected': {
+        // Request browser notification permission on first connect
+        requestNotificationPermission();
         const newEpoch = data.serverEpoch;
         if (serverEpochRef.current && newEpoch && serverEpochRef.current !== newEpoch) {
           // Server restarted — epoch changed
@@ -140,6 +143,10 @@ export function useClaudeChat() {
         // Request file tree on (re)connect so sidebar doesn't stay empty
         // (send() silently drops messages before WS is OPEN)
         setTimeout(() => sendRef.current({ type: 'file_tree' }), 100);
+
+        // Refresh kanban tasks on (re)connect — task_update messages may have
+        // been missed during a brief disconnection (mobile bg, Cloudflare, etc.)
+        setTimeout(() => sendRef.current({ type: 'task_list' }), 150);
 
         // Restore streaming indicators for all running sessions
         const runningSessions: string[] = data.streamingSessions || [];
@@ -215,7 +222,7 @@ export function useClaudeChat() {
               questions: data.pendingQuestion.questions,
             });
           }
-          toastSuccess('Stream reconnected');
+          // Stream silently re-attached — no toast distraction
         } else {
           // status === 'idle'
           // Check wasStreaming OR safetyTimerFired (timer may have cleared isStreaming before reconnect)
@@ -270,7 +277,7 @@ export function useClaudeChat() {
         if (data.sessionId) {
           useSessionStore.getState().setSessionStreaming(data.sessionId, data.status === 'streaming');
           // Bump updatedAt so sidebar re-sorts (covers background sessions too)
-          useSessionStore.getState().updateSessionMeta(data.sessionId, {});
+          useSessionStore.getState().updateSessionMeta(data.sessionId, { updatedAt: new Date().toISOString() });
 
           // Auto-send queued messages for BACKGROUND sessions that finish streaming.
           // Active session queue is handled by InputBox's useEffect.
@@ -734,12 +741,20 @@ export function useClaudeChat() {
       }
 
       case 'task_update': {
-        const { taskId, status, sessionId: taskSessionId, progressSummary, session: taskSession, claudeSessionId: taskClaudeSessionId } = data;
+        const { taskId, status, sessionId: taskSessionId, progressSummary, session: taskSession, claudeSessionId: taskClaudeSessionId, scheduledAt, scheduleCron, scheduleEnabled } = data;
         useKanbanStore.getState().updateTask(taskId, {
           ...(status && { status }),
-          ...(taskSessionId && { sessionId: taskSessionId }),
+          ...(taskSessionId !== undefined && { sessionId: taskSessionId }),
           ...(progressSummary && { progressSummary }),
+          ...(scheduledAt !== undefined && { scheduledAt }),
+          ...(scheduleCron !== undefined && { scheduleCron }),
+          ...(scheduleEnabled !== undefined && { scheduleEnabled }),
         });
+        // Notify on task completion or failure
+        if (status === 'done' || status === 'failed') {
+          const task = useKanbanStore.getState().tasks.find(t => t.id === taskId);
+          notifyTaskComplete(task?.title || 'Unknown task', status);
+        }
         // Add task's session to session store so card click → chat navigation works
         if (taskSession && taskSessionId) {
           const existing = useSessionStore.getState().sessions.find((s) => s.id === taskSessionId);
@@ -783,6 +798,9 @@ export function useClaudeChat() {
         });
       }, 50);
     }
+    // Also refresh kanban tasks — task_update messages may have been lost
+    // during disconnection (e.g. task completed while WS was down)
+    setTimeout(() => sendRef.current({ type: 'task_list' }), 100);
   }, []);
 
   const { send, connected, ws: wsRef2, safetyTimerFired } = useWebSocket(wsUrl, handleMessage, handleReconnect);
@@ -813,7 +831,7 @@ export function useClaudeChat() {
       // Bump updatedAt so the session moves to top of sidebar immediately
       const activeSid = useChatStore.getState().sessionId;
       if (activeSid) {
-        useSessionStore.getState().updateSessionMeta(activeSid, {});
+        useSessionStore.getState().updateSessionMeta(activeSid, { updatedAt: new Date().toISOString() });
       }
 
       send({

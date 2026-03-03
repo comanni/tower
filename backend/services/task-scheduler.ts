@@ -1,0 +1,141 @@
+/**
+ * Task Scheduler — checks for due scheduled tasks every 30s and spawns them.
+ *
+ * Design: see ~/workspace/decisions/2026-03-03-kanban-scheduled-tasks-design.md
+ */
+import { getDb } from '../db/schema.js';
+import { getTask, updateTask, type TaskMeta, type ScheduleCron } from './task-manager.js';
+import { spawnTask } from './task-runner.js';
+
+const SCHEDULER_INTERVAL = 30_000; // 30 seconds
+const MAX_CONCURRENT_TASKS = 10;   // mirrors task-runner.ts
+
+type BroadcastFn = (type: string, data: any) => void;
+
+let schedulerTimer: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Calculate the next run time from a ScheduleCron pattern.
+ * All calculations in local time (server timezone).
+ */
+export function calculateNextRun(cron: ScheduleCron, from: Date = new Date()): Date {
+  const next = new Date(from);
+
+  switch (cron.type) {
+    case 'daily': {
+      next.setHours(cron.hour ?? 9, cron.minute ?? 0, 0, 0);
+      if (next <= from) next.setDate(next.getDate() + 1);
+      return next;
+    }
+
+    case 'weekdays': {
+      next.setHours(cron.hour ?? 9, cron.minute ?? 0, 0, 0);
+      if (next <= from) next.setDate(next.getDate() + 1);
+      // Skip weekends (0=Sun, 6=Sat)
+      while (next.getDay() === 0 || next.getDay() === 6) {
+        next.setDate(next.getDate() + 1);
+      }
+      return next;
+    }
+
+    case 'weekly': {
+      const targetDay = cron.day ?? 1; // default Monday
+      next.setHours(cron.hour ?? 9, cron.minute ?? 0, 0, 0);
+      // Advance to next occurrence of target day
+      let daysUntil = targetDay - next.getDay();
+      if (daysUntil < 0) daysUntil += 7;
+      if (daysUntil === 0 && next <= from) daysUntil = 7;
+      next.setDate(next.getDate() + daysUntil);
+      return next;
+    }
+
+    case 'interval': {
+      const intervalMs = (cron.hours ?? 1) * 60 * 60 * 1000;
+      return new Date(from.getTime() + intervalMs);
+    }
+
+    default:
+      // Fallback: 1 hour from now
+      return new Date(from.getTime() + 3600_000);
+  }
+}
+
+/**
+ * Single tick — find due tasks and spawn them.
+ */
+function tick(broadcastFn: BroadcastFn, userId?: number, userRole?: string, allowedPath?: string) {
+  try {
+    const db = getDb();
+    const now = new Date().toISOString();
+    const dueTasks = db.prepare(`
+      SELECT * FROM tasks
+      WHERE status = 'todo'
+        AND schedule_enabled = 1
+        AND scheduled_at IS NOT NULL
+        AND scheduled_at <= ?
+        AND (archived IS NULL OR archived = 0)
+      ORDER BY scheduled_at ASC
+    `).all(now) as any[];
+
+    if (dueTasks.length === 0) return;
+
+    console.log(`[scheduler] Found ${dueTasks.length} due task(s)`);
+
+    for (const row of dueTasks) {
+      const taskId = row.id;
+      try {
+        // Disable schedule before spawn to prevent re-trigger on next tick.
+        // For one-time schedules, clear everything.
+        // For recurring, the reset happens in task-runner after completion.
+        if (!row.schedule_cron) {
+          // One-time: clear schedule entirely
+          updateTask(taskId, {
+            scheduledAt: null as any,
+            scheduleEnabled: false,
+          });
+        } else {
+          // Recurring: just disable until task-runner re-enables after completion
+          updateTask(taskId, { scheduleEnabled: false });
+        }
+
+        spawnTask(taskId, broadcastFn, userId, userRole, allowedPath);
+        console.log(`[scheduler] Spawned task "${row.title}" (${taskId.slice(0, 8)})`);
+      } catch (err: any) {
+        console.error(`[scheduler] Failed to spawn task ${taskId.slice(0, 8)}:`, err.message);
+        // If spawn fails (e.g. max concurrent), re-enable so next tick retries
+        if (row.schedule_cron) {
+          updateTask(taskId, { scheduleEnabled: true });
+        }
+      }
+    }
+  } catch (err: any) {
+    console.error('[scheduler] Tick error:', err.message);
+  }
+}
+
+/**
+ * Start the scheduler. Call once from index.ts after server is ready.
+ */
+export function startScheduler(broadcastFn: BroadcastFn): void {
+  if (schedulerTimer) {
+    console.warn('[scheduler] Already running');
+    return;
+  }
+
+  // Run first tick immediately to catch overdue tasks from downtime
+  tick(broadcastFn);
+
+  schedulerTimer = setInterval(() => tick(broadcastFn), SCHEDULER_INTERVAL);
+  console.log(`[scheduler] Started (interval=${SCHEDULER_INTERVAL / 1000}s)`);
+}
+
+/**
+ * Stop the scheduler (for graceful shutdown).
+ */
+export function stopScheduler(): void {
+  if (schedulerTimer) {
+    clearInterval(schedulerTimer);
+    schedulerTimer = null;
+    console.log('[scheduler] Stopped');
+  }
+}

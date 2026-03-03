@@ -80,7 +80,7 @@ export function getFileTree(dirPath: string, depth = 2): FileEntry[] {
   }
 }
 
-const BINARY_EXTENSIONS = new Set(['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'svg']);
+const BINARY_EXTENSIONS = new Set(['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'svg', 'mp4', 'webm']);
 
 export function readFile(filePath: string): { content: string; language: string; encoding?: string } {
   if (!isPathSafe(filePath)) {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
-import { toastSuccess, toastWarning, toastError } from '../utils/toast';
+import { toastError } from '../utils/toast';
 import { useChatStore } from '../stores/chat-store';
 
 type MessageHandler = (data: any) => void;
@@ -39,7 +39,6 @@ export function useWebSocket(url: string, onMessage: MessageHandler, onReconnect
       }
 
       if (wasConnected.current) {
-        toastSuccess('Reconnected');
         onReconnectRef.current?.();
       }
       wasConnected.current = true;
@@ -63,7 +62,7 @@ export function useWebSocket(url: string, onMessage: MessageHandler, onReconnect
     ws.onclose = () => {
       setConnected(false);
       if (wasConnected.current) {
-        toastWarning('Disconnected, reconnecting...');
+        // Silently reconnect — no toast distraction
       }
 
       // Start safety timer if streaming — force reset after 15s without reconnect

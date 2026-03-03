@@ -12,14 +12,27 @@ export function FloatingQuestionCard({ question, onAnswer, answered, onDismiss }
   // 질문별 답변 상태 — 모두 채워야 제출
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const prevQuestionId = useRef(question.questionId);
+  // "직접 입력" 모드 — 어떤 질문이 열려있는지
+  const [otherOpen, setOtherOpen] = useState<Record<number, boolean>>({});
+  const [otherText, setOtherText] = useState<Record<number, string>>({});
+  const otherInputRef = useRef<HTMLInputElement>(null);
 
   // 질문이 바뀌면 답변 초기화
   useEffect(() => {
     if (question.questionId !== prevQuestionId.current) {
       setAnswers({});
+      setOtherOpen({});
+      setOtherText({});
       prevQuestionId.current = question.questionId;
     }
   }, [question.questionId]);
+
+  // Other 입력창이 열리면 자동 포커스
+  useEffect(() => {
+    if (Object.values(otherOpen).some(Boolean)) {
+      otherInputRef.current?.focus();
+    }
+  }, [otherOpen]);
 
   const totalQuestions = question.questions.length;
   const allAnswered = Object.keys(answers).length === totalQuestions;
@@ -27,6 +40,7 @@ export function FloatingQuestionCard({ question, onAnswer, answered, onDismiss }
 
   const handleSelect = (qi: number, label: string) => {
     if (isAnswered || answers[qi]) return; // 이미 답한 질문은 변경 불가
+    setOtherOpen(prev => ({ ...prev, [qi]: false })); // 직접 입력 닫기
     const newAnswers = { ...answers, [qi]: label };
     setAnswers(newAnswers);
 
@@ -37,6 +51,12 @@ export function FloatingQuestionCard({ question, onAnswer, answered, onDismiss }
         .join('\n');
       onAnswer(question.questionId, combined);
     }
+  };
+
+  const handleOtherSubmit = (qi: number) => {
+    const text = (otherText[qi] || '').trim();
+    if (!text) return;
+    handleSelect(qi, text);
   };
 
   return (
@@ -86,6 +106,7 @@ export function FloatingQuestionCard({ question, onAnswer, answered, onDismiss }
       {/* Body */}
       <div className="px-4 py-3 space-y-3">
         {question.questions.map((q, qi) => {
+          const currentAnswer = answers[qi] || (answered ? answered.answer.split('\n')[qi]?.split(': ').slice(1).join(': ') : null);
           const qAnswered = answers[qi] ?? (answered ? answered.answer.split('\n')[qi]?.split(': ').slice(1).join(': ') : null);
           const qDone = !!qAnswered;
           return (
@@ -99,10 +120,10 @@ export function FloatingQuestionCard({ question, onAnswer, answered, onDismiss }
                 </svg>
               )}
             </div>
-            {q.options && (
+            {q.options && (<>
               <div className="flex flex-wrap gap-2">
                 {q.options.map((opt, oi) => {
-                  const isSelected = (answers[qi] || (answered ? answered.answer.split('\n')[qi]?.split(': ').slice(1).join(': ') : null)) === opt.label;
+                  const isSelected = currentAnswer === opt.label;
                   if (qDone) {
                     return (
                       <span
@@ -146,8 +167,81 @@ export function FloatingQuestionCard({ question, onAnswer, answered, onDismiss }
                     </button>
                   );
                 })}
+                {/* Other (직접 입력) — 답변 완료 시 */}
+                {qDone && currentAnswer && !q.options.some(o => o.label === currentAnswer) && (
+                  <span
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[12px] transition-all"
+                    style={{
+                      background: 'var(--th-q-done-selected-bg)',
+                      borderColor: 'var(--th-q-done-selected-border)',
+                      color: 'var(--th-q-done-selected-text)',
+                    }}
+                  >
+                    <svg className="w-3.5 h-3.5" style={{ color: 'var(--th-q-done-accent)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                    </svg>
+                    {currentAnswer}
+                  </span>
+                )}
+                {/* Other (직접 입력) 버튼 — 미답변 시 */}
+                {!qDone && !otherOpen[qi] && (
+                  <button
+                    onClick={() => setOtherOpen(prev => ({ ...prev, [qi]: true }))}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed text-[12px] active:scale-95 transition-all cursor-pointer"
+                    style={{
+                      background: 'transparent',
+                      borderColor: 'var(--th-q-pending-btn-border)',
+                      color: 'var(--th-q-pending-desc)',
+                    }}
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
+                    Other...
+                  </button>
+                )}
               </div>
-            )}
+              {/* Other 텍스트 입력창 */}
+              {!qDone && otherOpen[qi] && (
+                <div className="flex gap-2 mt-1">
+                  <input
+                    ref={otherInputRef}
+                    type="text"
+                    value={otherText[qi] || ''}
+                    onChange={e => setOtherText(prev => ({ ...prev, [qi]: e.target.value }))}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleOtherSubmit(qi);
+                      if (e.key === 'Escape') setOtherOpen(prev => ({ ...prev, [qi]: false }));
+                    }}
+                    placeholder="Type your answer..."
+                    className="flex-1 px-3 py-1.5 rounded-lg border text-[12px] bg-surface-900 outline-none focus:ring-1"
+                    style={{
+                      borderColor: 'var(--th-q-pending-btn-border)',
+                      color: 'var(--th-text-primary)',
+                    }}
+                  />
+                  <button
+                    onClick={() => handleOtherSubmit(qi)}
+                    disabled={!(otherText[qi] || '').trim()}
+                    className="px-3 py-1.5 rounded-lg border text-[12px] font-medium transition-all disabled:opacity-30"
+                    style={{
+                      background: 'var(--th-q-pending-btn-bg)',
+                      borderColor: 'var(--th-q-pending-btn-border)',
+                      color: 'var(--th-q-pending-btn-text)',
+                    }}
+                  >
+                    Send
+                  </button>
+                  <button
+                    onClick={() => setOtherOpen(prev => ({ ...prev, [qi]: false }))}
+                    className="px-2 py-1.5 rounded-lg text-[12px] transition-all hover:bg-white/5"
+                    style={{ color: 'var(--th-text-muted)' }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </>)}
           </div>
           );
         })}

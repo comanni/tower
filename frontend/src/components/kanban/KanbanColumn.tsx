@@ -12,9 +12,10 @@ interface KanbanColumnProps {
   onDeleteTask: (taskId: string) => void;
   onSpawnTask: (taskId: string) => void;
   onAbortTask: (taskId: string) => void;
+  onScheduleTask: (taskId: string) => void;
 }
 
-export function KanbanColumn({ id, title, color, tasks, onCardClick, onDeleteTask, onSpawnTask, onAbortTask }: KanbanColumnProps) {
+export function KanbanColumn({ id, title, color, tasks, onCardClick, onDeleteTask, onSpawnTask, onAbortTask, onScheduleTask }: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id });
 
   return (
@@ -43,6 +44,7 @@ export function KanbanColumn({ id, title, color, tasks, onCardClick, onDeleteTas
               onDelete={() => onDeleteTask(task.id)}
               onSpawn={(task.status === 'todo' || task.status === 'failed') ? () => onSpawnTask(task.id) : undefined}
               onAbort={task.status === 'in_progress' ? () => onAbortTask(task.id) : undefined}
+              onSchedule={(task.status === 'todo' || task.status === 'done' || task.status === 'failed') ? () => onScheduleTask(task.id) : undefined}
             />
           ))}
         </SortableContext>

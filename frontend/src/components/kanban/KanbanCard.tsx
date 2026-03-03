@@ -9,6 +9,38 @@ interface KanbanCardProps {
   onDelete?: () => void;
   onSpawn?: () => void;
   onAbort?: () => void;
+  onSchedule?: () => void;
+}
+
+/** Human-friendly time-until string */
+function formatTimeUntil(iso: string): string {
+  const ms = new Date(iso).getTime() - Date.now();
+  if (ms < 0) return 'overdue';
+  const mins = Math.round(ms / 60_000);
+  if (mins < 60) return `in ${mins}m`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `in ${hrs}h`;
+  const days = Math.round(hrs / 24);
+  return `in ${days}d`;
+}
+
+/** Human-friendly recurring label */
+function formatCronLabel(json: string | null): string | null {
+  if (!json) return null;
+  try {
+    const c = JSON.parse(json);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    switch (c.type) {
+      case 'daily': return `Daily ${pad(c.hour ?? 9)}:${pad(c.minute ?? 0)}`;
+      case 'weekdays': return `Weekdays ${pad(c.hour ?? 9)}:${pad(c.minute ?? 0)}`;
+      case 'weekly': {
+        const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+        return `${days[c.day ?? 1]} ${pad(c.hour ?? 9)}:${pad(c.minute ?? 0)}`;
+      }
+      case 'interval': return `Every ${c.hours ?? 1}h`;
+      default: return null;
+    }
+  } catch { return null; }
 }
 
 const STATUS_STYLES: Record<string, { badge: string; border: string }> = {
@@ -18,7 +50,7 @@ const STATUS_STYLES: Record<string, { badge: string; border: string }> = {
   failed: { badge: 'bg-red-900/50 text-red-300', border: 'border-red-500/30' },
 };
 
-export function KanbanCard({ task, onClick, isDragOverlay, onDelete, onSpawn, onAbort }: KanbanCardProps) {
+export function KanbanCard({ task, onClick, isDragOverlay, onDelete, onSpawn, onAbort, onSchedule }: KanbanCardProps) {
   const {
     attributes,
     listeners,
@@ -35,6 +67,9 @@ export function KanbanCard({ task, onClick, isDragOverlay, onDelete, onSpawn, on
 
   const styles = STATUS_STYLES[task.status] || STATUS_STYLES.todo;
   const lastProgress = task.progressSummary?.[task.progressSummary.length - 1] || '';
+  const isScheduled = task.scheduleEnabled && !!task.scheduledAt;
+  const isRecurring = !!task.scheduleCron;
+  const cronLabel = formatCronLabel(task.scheduleCron);
 
   return (
     <div
@@ -46,6 +81,7 @@ export function KanbanCard({ task, onClick, isDragOverlay, onDelete, onSpawn, on
         group p-3 rounded-lg border cursor-pointer transition-all
         bg-surface-850 hover:bg-surface-800
         ${styles.border}
+        ${isScheduled ? (isRecurring ? 'border-l-2 border-l-purple-500' : 'border-l-2 border-l-amber-500') : ''}
         ${isDragging ? 'opacity-40' : ''}
         ${isDragOverlay ? 'shadow-xl shadow-black/50 rotate-2' : ''}
       `}
@@ -69,6 +105,19 @@ export function KanbanCard({ task, onClick, isDragOverlay, onDelete, onSpawn, on
       {/* Description preview */}
       {task.description && (
         <p className="text-xs text-gray-500 mt-1 line-clamp-2">{task.description}</p>
+      )}
+
+      {/* Schedule indicator */}
+      {isScheduled && (
+        <div className={`mt-1.5 flex items-center gap-1 text-[10px] ${isRecurring ? 'text-purple-400' : 'text-amber-400'}`}>
+          <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span className="truncate">
+            {isRecurring && cronLabel ? cronLabel : formatTimeUntil(task.scheduledAt!)}
+            {isRecurring && task.scheduledAt && ` · next ${formatTimeUntil(task.scheduledAt)}`}
+          </span>
+        </div>
       )}
 
       {/* Progress summary */}
@@ -114,6 +163,17 @@ export function KanbanCard({ task, onClick, isDragOverlay, onDelete, onSpawn, on
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </>
                 )}
+              </svg>
+            </button>
+          )}
+          {onSchedule && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onSchedule(); }}
+              className={`opacity-0 group-hover:opacity-100 transition-all ${isScheduled ? (isRecurring ? 'text-purple-400 hover:text-purple-300' : 'text-amber-400 hover:text-amber-300') : 'text-gray-400 hover:text-gray-300'}`}
+              title={isScheduled ? 'Edit schedule' : 'Schedule task'}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </button>
           )}

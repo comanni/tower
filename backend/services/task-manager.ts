@@ -15,6 +15,17 @@ export interface TaskMeta {
   updatedAt: string;
   completedAt: string | null;
   userId: number | null;
+  scheduledAt: string | null;
+  scheduleCron: string | null;
+  scheduleEnabled: boolean;
+}
+
+export interface ScheduleCron {
+  type: 'daily' | 'weekdays' | 'weekly' | 'interval';
+  hour?: number;
+  minute?: number;
+  day?: number;   // 0=Sun, 1=Mon, ..., 6=Sat (for 'weekly')
+  hours?: number; // for 'interval' type
 }
 
 function mapRow(row: any): TaskMeta {
@@ -32,10 +43,20 @@ function mapRow(row: any): TaskMeta {
     updatedAt: row.updated_at,
     completedAt: row.completed_at,
     userId: row.user_id,
+    scheduledAt: row.scheduled_at || null,
+    scheduleCron: row.schedule_cron || null,
+    scheduleEnabled: row.schedule_enabled === 1,
   };
 }
 
-export function createTask(title: string, description: string, cwd: string, userId?: number, model?: string): TaskMeta {
+export function createTask(
+  title: string,
+  description: string,
+  cwd: string,
+  userId?: number,
+  model?: string,
+  schedule?: { scheduledAt?: string | null; scheduleCron?: string | null; scheduleEnabled?: boolean },
+): TaskMeta {
   const db = getDb();
   const id = uuidv4();
   const maxOrder = db.prepare('SELECT MAX(sort_order) as max_order FROM tasks WHERE status = ?').get('todo') as any;
@@ -43,9 +64,14 @@ export function createTask(title: string, description: string, cwd: string, user
   const resolvedModel = model || 'claude-opus-4-6';
 
   db.prepare(`
-    INSERT INTO tasks (id, title, description, cwd, model, status, sort_order, user_id)
-    VALUES (?, ?, ?, ?, ?, 'todo', ?, ?)
-  `).run(id, title, description, cwd, resolvedModel, sortOrder, userId ?? null);
+    INSERT INTO tasks (id, title, description, cwd, model, status, sort_order, user_id, scheduled_at, schedule_cron, schedule_enabled)
+    VALUES (?, ?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?)
+  `).run(
+    id, title, description, cwd, resolvedModel, sortOrder, userId ?? null,
+    schedule?.scheduledAt ?? null,
+    schedule?.scheduleCron ?? null,
+    schedule?.scheduleEnabled ? 1 : 0,
+  );
 
   return getTask(id)!;
 }
@@ -64,7 +90,7 @@ export function getTask(id: string): TaskMeta | null {
   return row ? mapRow(row) : null;
 }
 
-export function updateTask(id: string, updates: Partial<Pick<TaskMeta, 'title' | 'description' | 'cwd' | 'status' | 'sessionId' | 'sortOrder' | 'progressSummary' | 'completedAt'>>): TaskMeta | null {
+export function updateTask(id: string, updates: Partial<Pick<TaskMeta, 'title' | 'description' | 'cwd' | 'model' | 'status' | 'sessionId' | 'sortOrder' | 'progressSummary' | 'completedAt' | 'scheduledAt' | 'scheduleCron' | 'scheduleEnabled'>>): TaskMeta | null {
   const db = getDb();
   const fields: string[] = [];
   const values: any[] = [];
@@ -72,11 +98,15 @@ export function updateTask(id: string, updates: Partial<Pick<TaskMeta, 'title' |
   if (updates.title !== undefined) { fields.push('title = ?'); values.push(updates.title); }
   if (updates.description !== undefined) { fields.push('description = ?'); values.push(updates.description); }
   if (updates.cwd !== undefined) { fields.push('cwd = ?'); values.push(updates.cwd); }
+  if (updates.model !== undefined) { fields.push('model = ?'); values.push(updates.model); }
   if (updates.status !== undefined) { fields.push('status = ?'); values.push(updates.status); }
   if (updates.sessionId !== undefined) { fields.push('session_id = ?'); values.push(updates.sessionId); }
   if (updates.sortOrder !== undefined) { fields.push('sort_order = ?'); values.push(updates.sortOrder); }
   if (updates.progressSummary !== undefined) { fields.push('progress_summary = ?'); values.push(JSON.stringify(updates.progressSummary)); }
   if (updates.completedAt !== undefined) { fields.push('completed_at = ?'); values.push(updates.completedAt); }
+  if (updates.scheduledAt !== undefined) { fields.push('scheduled_at = ?'); values.push(updates.scheduledAt); }
+  if (updates.scheduleCron !== undefined) { fields.push('schedule_cron = ?'); values.push(updates.scheduleCron); }
+  if (updates.scheduleEnabled !== undefined) { fields.push('schedule_enabled = ?'); values.push(updates.scheduleEnabled ? 1 : 0); }
 
   if (fields.length === 0) return getTask(id);
 

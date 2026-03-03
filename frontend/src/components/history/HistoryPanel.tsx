@@ -137,12 +137,13 @@ export function HistoryPanel() {
   };
 
   const handleSessionClick = (session: ArchivedSession) => {
-    // Restore and switch to chat view
-    handleRestoreSession(session.id).then(() => {
-      useSessionStore.getState().setActiveView('chat');
-      useSessionStore.getState().setActiveSessionId(session.id);
-      window.dispatchEvent(new CustomEvent('kanban-select-session', { detail: { sessionId: session.id } }));
-    });
+    // View without restoring — add to store temporarily so handleSelectSession
+    // can find it and load messages. Session stays archived in DB.
+    // (Temporary store entry disappears on next page refresh.)
+    if (!useSessionStore.getState().sessions.find((s) => s.id === session.id)) {
+      useSessionStore.getState().addSession(session);
+    }
+    window.dispatchEvent(new CustomEvent('kanban-select-session', { detail: { sessionId: session.id } }));
   };
 
   const filteredSessions = searchQuery

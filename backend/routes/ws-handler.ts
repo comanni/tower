@@ -727,10 +727,9 @@ function handleAbort(client: WsClient, data: { sessionId?: string }) {
     const aborted = abortSession(sessionId);
     // Pure: bump epoch + remove this client from session routing
     abortCleanup(client, sessionClients, sessionId);
-    // Clear claudeSessionId — aborted CLI process may leave corrupted session files.
-    // Without this, next message tries to resume a broken session → exit code 1.
-    try { updateSession(sessionId, { claudeSessionId: '' }); } catch {}
-    broadcastToAll({ type: 'session_meta_update', sessionId, updates: { claudeSessionId: '' } });
+    // Keep claudeSessionId intact — abort only stops the current response,
+    // the CLI session file (.jsonl) remains valid for resume.
+    // If resume fails on next message, executeQuery's retry handles it gracefully.
     send(client.ws, { type: 'abort_result', aborted, sessionId });
   }
 }
@@ -743,9 +742,9 @@ function handleFileRead(client: WsClient, data: { path: string }) {
     }
     // Binary files (PDF, images): send metadata only — frontend fetches via HTTP API
     const ext = data.path.split('.').pop()?.toLowerCase() || '';
-    const binaryExts = new Set(['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico']);
+    const binaryExts = new Set(['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'mp4', 'webm']);
     if (binaryExts.has(ext)) {
-      const langMap: Record<string, string> = { pdf: 'pdf', png: 'image', jpg: 'image', jpeg: 'image', gif: 'image', webp: 'image', bmp: 'image', ico: 'image' };
+      const langMap: Record<string, string> = { pdf: 'pdf', png: 'image', jpg: 'image', jpeg: 'image', gif: 'image', webp: 'image', bmp: 'image', ico: 'image', mp4: 'video', webm: 'video' };
       console.log(`[ws] binary file detected: ${data.path} (${ext})`);
       send(client.ws, {
         type: 'file_content',

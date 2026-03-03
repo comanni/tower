@@ -124,7 +124,7 @@ export const useFileStore = create<FileState>((set, get) => ({
   setTreeRoot: (path) => set({ treeRoot: path }),
   setOpenFile: (file) => {
     if (file) {
-      const shouldExpand = file.language === 'html' || file.language === 'pdf';
+      const shouldExpand = ['html', 'pdf', 'image', 'video'].includes(file.language);
       set({
         openFile: file,
         contextPanelOpen: true,

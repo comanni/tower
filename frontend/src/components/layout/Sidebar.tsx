@@ -54,6 +54,7 @@ export function Sidebar({
   const fileTreeDragCounter = useRef(0);
 
   const [sharedWithMe, setSharedWithMe] = useState<{ id: string; file_path: string; owner_username: string }[]>([]);
+  const [searchResults, setSearchResults] = useState<{ type: string; sessionId: string; sessionName: string; snippet: string }[] | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -65,6 +66,24 @@ export function Sidebar({
       .then(data => { if (Array.isArray(data)) setSharedWithMe(data); })
       .catch(() => {});
   }, []);
+
+  // Debounced server-side FTS5 search
+  useEffect(() => {
+    if (!searchQuery.trim() || searchQuery.length < 2) {
+      setSearchResults(null);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      const tk = localStorage.getItem('token');
+      const hdrs: Record<string, string> = {};
+      if (tk) hdrs['Authorization'] = `Bearer ${tk}`;
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}`, { headers: hdrs });
+        if (res.ok) setSearchResults(await res.json());
+      } catch {}
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const handleFileTreeDrop = async (e: React.DragEvent) => {
     e.preventDefault();
@@ -108,18 +127,17 @@ export function Sidebar({
 
   const [cwdPickerOpen, setCwdPickerOpen] = useState(false);
 
-  // Filter and sort sessions: favorites first, then by updatedAt
+  // Filter and sort sessions: use FTS results when searching, otherwise favorites first + updatedAt
   const filteredSessions = useMemo(() => {
-    let list = sessions;
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      list = list.filter((s) => s.name.toLowerCase().includes(q));
+    if (searchResults) {
+      const matchedIds = new Set(searchResults.map(r => r.sessionId));
+      return sessions.filter(s => matchedIds.has(s.id));
     }
-    return [...list].sort((a, b) => {
+    return [...sessions].sort((a, b) => {
       if (a.favorite !== b.favorite) return a.favorite ? -1 : 1;
       return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
     });
-  }, [sessions, searchQuery]);
+  }, [sessions, searchResults]);
 
   const tabClass = (tab: string) =>
     `flex-1 py-2 text-[11px] font-semibold tracking-wide transition-colors ${
@@ -218,6 +236,28 @@ export function Sidebar({
                 />
               ))}
             </div>
+            {/* Message search snippets */}
+            {searchResults && searchResults.filter(r => r.type === 'message').length > 0 && (
+              <div className="mt-2 border-t border-surface-800/50 pt-2">
+                <div className="text-[10px] text-surface-600 uppercase tracking-wider font-medium mb-1 px-1">Messages</div>
+                <div className="space-y-0.5">
+                  {searchResults.filter(r => r.type === 'message').map((r, i) => {
+                    const target = sessions.find(s => s.id === r.sessionId);
+                    if (!target) return null;
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => onSelectSession(target)}
+                        className="w-full text-left px-2 py-1.5 rounded hover:bg-surface-800/60 transition-colors"
+                      >
+                        <span className="text-[11px] text-gray-400">{r.sessionName}</span>
+                        <p className="text-[10px] text-surface-600 truncate mt-0.5">{r.snippet}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         ) : sidebarTab === 'files' ? (
           <div
