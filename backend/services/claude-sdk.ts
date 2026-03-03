@@ -1,5 +1,8 @@
 import { query, type SDKMessage, type Query, type Options, type CanUseTool } from '@anthropic-ai/claude-agent-sdk';
 import { execSync } from 'child_process';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 import { config } from '../config.js';
 
 // CRITICAL: Remove CLAUDECODE env var to prevent SDK conflicts
@@ -111,6 +114,55 @@ export interface ClaudeSession {
 
 const activeSessions = new Map<string, ClaudeSession>();
 
+/**
+ * Repair a .jsonl session file by removing corrupted trailing lines.
+ * When a CLI process is killed mid-write, the last line may be truncated JSON.
+ * The SDK refuses to resume from a corrupted file (exit code 1).
+ * Fix: read backwards, remove lines that aren't valid JSON, keep the rest.
+ */
+function repairSessionFile(claudeSessionId: string, cwd: string): boolean {
+  // The SDK stores .jsonl files in ~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl
+  const encodedCwd = cwd.replace(/\//g, '-');
+  const jsonlPath = path.join(os.homedir(), '.claude', 'projects', encodedCwd, `${claudeSessionId}.jsonl`);
+
+  if (!fs.existsSync(jsonlPath)) return false;
+
+  try {
+    const content = fs.readFileSync(jsonlPath, 'utf8');
+    const lines = content.split('\n');
+
+    // Remove trailing empty lines
+    while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+      lines.pop();
+    }
+
+    if (lines.length === 0) return false;
+
+    // Check last lines for valid JSON, remove corrupted ones
+    let removed = 0;
+    while (lines.length > 0) {
+      const lastLine = lines[lines.length - 1].trim();
+      if (lastLine === '') { lines.pop(); continue; }
+      try {
+        JSON.parse(lastLine);
+        break; // valid JSON — stop
+      } catch {
+        lines.pop();
+        removed++;
+      }
+    }
+
+    if (removed > 0 && lines.length > 0) {
+      fs.writeFileSync(jsonlPath, lines.join('\n') + '\n');
+      console.log(`[sdk] Repaired ${jsonlPath}: removed ${removed} corrupted line(s), ${lines.length} lines remain`);
+      return true;
+    }
+  } catch (err: any) {
+    console.warn(`[sdk] Failed to repair session file: ${err.message}`);
+  }
+  return false;
+}
+
 export function getActiveSessionCount(): number {
   let count = 0;
   for (const session of activeSessions.values()) {
@@ -167,6 +219,8 @@ export async function* executeQuery(
   };
 
   if (options.resumeSessionId) {
+    // Repair .jsonl before resume — removes corrupted trailing lines from killed processes
+    repairSessionFile(options.resumeSessionId, queryOptions.cwd || config.defaultCwd);
     queryOptions.resume = options.resumeSessionId;
     console.log(`[sdk] resume attempt: session=${sessionId.slice(0,8)} claudeSid=${options.resumeSessionId.slice(0,12)} cwd=${queryOptions.cwd}`);
   }
