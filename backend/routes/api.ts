@@ -26,6 +26,8 @@ import {
   autoCommit,
 } from '../services/git-manager.js';
 import { config, availableModels } from '../config.js';
+import { search } from '../services/search.js';
+import { extractTextFromContent } from '../utils/text.js';
 import { createTask, getTasks, getTask, updateTask, deleteTask, reorderTasks, getDistinctCwds, getArchivedTasks, restoreTask, permanentlyDeleteTask } from '../services/task-manager.js';
 import {
   createInternalShare, createExternalShare, getSharesByFile,
@@ -35,7 +37,7 @@ import {
 import fsPromises from 'fs/promises';
 import { getDb } from '../db/schema.js';
 
-const UPLOAD_MAX_SIZE = parseInt(process.env.UPLOAD_MAX_SIZE || '') || 10 * 1024 * 1024; // 10MB
+const UPLOAD_MAX_SIZE = parseInt(process.env.UPLOAD_MAX_SIZE || '') || 50 * 1024 * 1024; // 50MB
 const DANGEROUS_EXTENSIONS = new Set([
   '.exe', '.sh', '.bat', '.cmd', '.msi', '.ps1', '.jar',
   '.com', '.scr', '.vbs', '.vbe', '.wsf', '.wsh', '.pif',
@@ -44,6 +46,12 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: UPLOAD_MAX_SIZE },
 });
+
+// Uploads directory for chat file attachments (saved server-side so AI can read them)
+const UPLOADS_DIR = path.join(config.workspaceRoot, 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
 
 const router = Router();
 
@@ -360,24 +368,8 @@ router.post('/sessions/:id/auto-name', async (req, res) => {
       return res.status(400).json({ error: 'Need at least one user and assistant message' });
     }
 
-    // Extract text from content
-    const extractText = (content: string): string => {
-      try {
-        const parsed = JSON.parse(content);
-        if (Array.isArray(parsed)) {
-          return parsed
-            .filter((b: any) => b.type === 'text')
-            .map((b: any) => b.text)
-            .join(' ');
-        }
-        return content;
-      } catch {
-        return content;
-      }
-    };
-
-    const userText = extractText(userMsg.content);
-    const assistantText = extractText(assistantMsg.content);
+    const userText = extractTextFromContent(userMsg.content);
+    const assistantText = extractTextFromContent(assistantMsg.content);
 
     const name = await generateSessionName(userText, assistantText);
     updateSession(req.params.id, { name, autoNamed: 1 } as any);
@@ -395,27 +387,12 @@ router.post('/sessions/:id/summarize', async (req, res) => {
       return res.status(400).json({ error: 'No messages to summarize' });
     }
 
-    const extractText = (content: string): string => {
-      try {
-        const parsed = JSON.parse(content);
-        if (Array.isArray(parsed)) {
-          return parsed
-            .filter((b: any) => b.type === 'text')
-            .map((b: any) => b.text)
-            .join(' ');
-        }
-        return content;
-      } catch {
-        return content;
-      }
-    };
-
     // Last 20 messages, preserving user/assistant conversation order
     const recent = messages.slice(-20);
     const messagesText = recent
       .filter((m) => m.role === 'user' || m.role === 'assistant')
       .map((m) => {
-        const text = extractText(m.content).trim();
+        const text = extractTextFromContent(m.content).trim();
         if (!text) return null;
         const label = m.role === 'user' ? 'User' : 'AI';
         return `${label}: ${text.slice(0, 400)}`;
@@ -450,6 +427,18 @@ router.delete('/sessions/:id', (req, res) => {
 // Claude native sessions (read-only)
 router.get('/claude-sessions', (_req, res) => {
   res.json(scanClaudeNativeSessions());
+});
+
+// ───── Search (FTS5) ─────
+router.get('/search', (req, res) => {
+  const q = (req.query.q as string || '').trim();
+  if (!q || q.length < 2) {
+    return res.json([]);
+  }
+  const userId = (req as any).user?.userId;
+  const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
+  const results = search(q, { userId, limit });
+  res.json(results);
 });
 
 // ───── Session Messages ─────
@@ -599,6 +588,37 @@ router.post('/files/upload', handleMulterUpload, async (req, res) => {
   }
 });
 
+// ───── Chat File Upload (saves to workspace/uploads/, returns path for AI) ─────
+router.post('/files/chat-upload', handleMulterUpload, async (req, res) => {
+  try {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) return res.status(400).json({ error: 'No files provided' });
+
+    const results: { name: string; path: string; error?: string }[] = [];
+
+    for (const file of files) {
+      const ext = path.extname(file.originalname).toLowerCase();
+      if (DANGEROUS_EXTENSIONS.has(ext)) {
+        results.push({ name: file.originalname, path: '', error: `Blocked extension: ${ext}` });
+        continue;
+      }
+      // Deduplicate: add timestamp prefix to avoid collisions
+      const safeName = `${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      const filePath = path.join(UPLOADS_DIR, safeName);
+      try {
+        writeFileBinary(filePath, file.buffer, config.workspaceRoot);
+        results.push({ name: file.originalname, path: filePath });
+      } catch (err: any) {
+        results.push({ name: file.originalname, path: '', error: err.message });
+      }
+    }
+
+    res.json({ results });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ───── File Management (create / mkdir / delete / rename) ─────
 router.post('/files/create', (req, res) => {
   try {
@@ -700,6 +720,8 @@ router.get('/files/serve', (req, res) => {
     const userRoot = userId ? getUserAllowedPath(userId) : config.workspaceRoot;
     if (!isPathSafe(filePath, userRoot)) return res.status(403).json({ error: 'Access denied' });
 
+    const isDownload = req.query.download === '1';
+    const fileName = path.basename(filePath);
     const ext = filePath.split('.').pop()?.toLowerCase();
     const binaryTypes: Record<string, string> = {
       pdf: 'application/pdf',
@@ -712,6 +734,17 @@ router.get('/files/serve', (req, res) => {
       ico: 'image/x-icon',
       svg: 'image/svg+xml',
     };
+
+    // Download mode: stream file as attachment regardless of type
+    if (isDownload) {
+      const mimeType = (ext && binaryTypes[ext]) || 'application/octet-stream';
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
+      const stream = fs.createReadStream(filePath);
+      stream.pipe(res);
+      stream.on('error', () => res.status(404).json({ error: 'File not found' }));
+      return;
+    }
 
     if (ext && binaryTypes[ext]) {
       res.setHeader('Content-Type', binaryTypes[ext]);
@@ -844,9 +877,12 @@ router.get('/tasks/meta', (req, res) => {
 
 router.post('/tasks', (req, res) => {
   try {
-    const { title, description, cwd, model } = req.body;
+    const { title, description, cwd, model, scheduledAt, scheduleCron, scheduleEnabled } = req.body;
     if (!title || !cwd) return res.status(400).json({ error: 'title and cwd required' });
-    const task = createTask(title, description || '', cwd, (req as any).user?.id, model);
+    const schedule = (scheduledAt || scheduleCron || scheduleEnabled)
+      ? { scheduledAt, scheduleCron, scheduleEnabled }
+      : undefined;
+    const task = createTask(title, description || '', cwd, (req as any).user?.id, model, schedule);
     res.json(task);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -887,7 +923,7 @@ router.post('/tasks/reorder', (req, res) => {
 // ── History (archived sessions + tasks) ──────────────────
 router.get('/history', (req, res) => {
   try {
-    const userId = (req as any).userId;
+    const userId = (req as any).user?.userId;
     const sessions = getArchivedSessions(userId);
     const tasks = getArchivedTasks(userId);
     res.json({ sessions, tasks });
