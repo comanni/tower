@@ -12,7 +12,7 @@ import { closeDb } from './db/schema.js';
 import { stopFileWatcher } from './services/file-system.js';
 import { initWorkspaceRepo } from './services/git-manager.js';
 import { resumeOrphanedTaskMonitoring, hasMonitoredTasks, stopAllMonitors } from './services/task-runner.js';
-import { cleanupOrphanedSdkProcesses, gracefulShutdown } from './services/claude-sdk.js';
+import { cleanupOrphanedSdkProcesses, stopOrphanMonitor, gracefulShutdown } from './services/claude-sdk.js';
 
 // CRITICAL: Remove CLAUDECODE env var before anything else
 delete process.env.CLAUDECODE;
@@ -89,17 +89,18 @@ server.listen(config.port, config.host, () => {
 ╚══════════════════════════════════════════╝
   `);
 
-  // Recover tasks that survived the restart, then conditionally clean up orphans
+  // Recover tasks that survived the restart, then start orphan monitor.
+  // The monitor only kills idle orphans (CPU < 1% for 2 checks), so it's safe
+  // to run alongside monitored tasks — active task processes won't be touched.
   resumeOrphanedTaskMonitoring((type, payload) => broadcastToAll({ type, ...payload }));
-  if (!hasMonitoredTasks()) {
-    cleanupOrphanedSdkProcesses();
-  }
+  cleanupOrphanedSdkProcesses();
 });
 
 // Graceful shutdown — let orphan CLI processes keep running
 process.on('SIGINT', () => {
   console.log('\nShutting down...');
   gracefulShutdown('SIGINT');
+  stopOrphanMonitor();
   stopAllMonitors();
   stopFileWatcher();
   closeDb();
@@ -108,6 +109,7 @@ process.on('SIGINT', () => {
 
 process.on('SIGTERM', () => {
   gracefulShutdown('SIGTERM');
+  stopOrphanMonitor();
   stopAllMonitors();
   stopFileWatcher();
   closeDb();

@@ -30,6 +30,14 @@ export function createSession(name: string, cwd: string, userId?: number): Sessi
     INSERT INTO sessions (id, name, cwd, user_id) VALUES (?, ?, ?, ?)
   `).run(id, name, cwd, userId || null);
 
+  // FTS sync
+  try {
+    const row = db.prepare('SELECT rowid FROM sessions WHERE id = ?').get(id) as any;
+    if (row) {
+      db.prepare('INSERT INTO sessions_fts(rowid, name, summary) VALUES (?, ?, ?)').run(row.rowid, name, '');
+    }
+  } catch {}
+
   return {
     id,
     name,
@@ -64,6 +72,17 @@ export function updateSession(id: string, updates: Partial<Pick<SessionMeta, 'na
 
   values.push(id);
   db.prepare(`UPDATE sessions SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+
+  // FTS sync (name or summary changed)
+  if (updates.name !== undefined || updates.summary !== undefined) {
+    try {
+      const row = db.prepare('SELECT rowid, name, summary FROM sessions WHERE id = ?').get(id) as any;
+      if (row) {
+        db.prepare('DELETE FROM sessions_fts WHERE rowid = ?').run(row.rowid);
+        db.prepare('INSERT INTO sessions_fts(rowid, name, summary) VALUES (?, ?, ?)').run(row.rowid, row.name, row.summary || '');
+      }
+    } catch {}
+  }
 }
 
 export function getSessions(userId?: number): SessionMeta[] {
@@ -129,21 +148,15 @@ export function restoreSession(id: string): boolean {
 
 export function permanentlyDeleteSession(id: string): boolean {
   const db = getDb();
+  // Clean FTS before deleting
+  try {
+    const row = db.prepare('SELECT rowid FROM sessions WHERE id = ?').get(id) as any;
+    if (row) db.prepare('DELETE FROM sessions_fts WHERE rowid = ?').run(row.rowid);
+  } catch {}
   const result = db.prepare('DELETE FROM sessions WHERE id = ?').run(id);
   return result.changes > 0;
 }
 
-/**
- * Clear all claudeSessionIds on server startup.
- * After a restart, all CLI processes are dead (or will be killed by orphan cleanup),
- * so there's nothing to resume. Clearing prevents stale resume attempts that
- * always fail with "Previous conversation context could not be restored".
- */
-export function clearAllClaudeSessionIds(): number {
-  const db = getDb();
-  const result = db.prepare(`UPDATE sessions SET claude_session_id = NULL WHERE claude_session_id IS NOT NULL AND claude_session_id != ''`).run();
-  return result.changes;
-}
 
 /** Scan Claude native session files from ~/.claude/projects/ */
 export function scanClaudeNativeSessions(): { sessionId: string; projectPath: string; modified: string }[] {

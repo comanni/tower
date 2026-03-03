@@ -14,6 +14,7 @@ AI command center for your team. Stack your own tower of AI and systems.
 ## ⚠️ Dev Server Warnings
 - **`npm run dev` is a single-instance command.** Running it multiple times (e.g., via `nohup npm run dev &` in different sessions) stacks zombie `tsx watch` processes that fight over port 32355 → streaming cuts off mid-response.
 - Before starting, check: `pgrep -fa "tsx.*backend"` — if more than one, kill extras first.
+- **Do NOT restart the backend while working on a task.** Restarting kills running tasks and loses context. Finish all current work first, then restart if needed.
 - Full server ops guide → `devserver.md`
 - Full warning history → `codify.md` (search "좀비" or "zombie")
 

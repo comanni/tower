@@ -8,37 +8,79 @@ delete process.env.CLAUDECODE;
 // Clean up orphaned Claude processes from previous backend runs.
 // When tsx watch restarts the backend, SDK-spawned CLI processes lose their
 // parent and become orphans (ppid=1, tty=?).
-// Strategy: SIGTERM first (lets CLI flush session .jsonl to disk), then
-// SIGKILL after 2s grace period for any that ignore SIGTERM.
+//
+// Strategy: DON'T kill immediately. Orphans may be mid-task for minutes.
+// Instead, poll every 60s and only kill orphans that have been idle (low CPU)
+// for at least one check cycle. This lets long-running tasks finish and flush
+// their .jsonl files, so resume always works.
+//
+// Session IDs are preserved in DB — user's next message resumes from .jsonl.
+const ORPHAN_CHECK_INTERVAL = 60_000; // check every 60s
+const ORPHAN_CPU_IDLE_THRESHOLD = 1.0; // below 1% CPU = idle
+let orphanCheckTimer: ReturnType<typeof setInterval> | null = null;
+const idleOrphans = new Set<number>(); // PIDs that were idle on last check
+
 export function cleanupOrphanedSdkProcesses() {
-  try {
-    const result = execSync(
-      `ps -eo pid,ppid,tty,args | awk '$2==1 && $3=="?" && /claude.*(--dangerously-skip-permissions|--permission-mode)/ {print $1}'`,
-      { encoding: 'utf8', timeout: 3000 }
-    ).trim();
-    if (!result) return;
+  // Don't stack multiple intervals
+  if (orphanCheckTimer) return;
 
-    const pids = result.split('\n').filter(Boolean);
-    console.log(`[sdk] Found ${pids.length} orphaned Claude process(es): ${pids.join(', ')}`);
+  console.log('[sdk] Starting orphan monitor (check every 60s, kill only idle orphans)');
+  orphanCheckTimer = setInterval(() => {
+    try {
+      // Find orphans with their CPU usage
+      const result = execSync(
+        `ps -eo pid,ppid,tty,pcpu,args | awk '$2==1 && $3=="?" && /claude.*(--dangerously-skip-permissions|--permission-mode)/ {print $1, $4}'`,
+        { encoding: 'utf8', timeout: 3000 }
+      ).trim();
 
-    for (const pid of pids) {
-      try {
-        process.kill(Number(pid), 'SIGTERM');
-        console.log(`[sdk] Sent SIGTERM to orphaned PID=${pid}`);
-      } catch { /* already dead */ }
-    }
-
-    // SIGKILL survivors after 2s grace period
-    setTimeout(() => {
-      for (const pid of pids) {
-        try {
-          process.kill(Number(pid), 0); // probe — throws if dead
-          process.kill(Number(pid), 'SIGKILL');
-          console.log(`[sdk] SIGKILL orphaned PID=${pid} (ignored SIGTERM)`);
-        } catch { /* already dead — good */ }
+      if (!result) {
+        idleOrphans.clear();
+        return;
       }
-    }, 2000);
-  } catch { /* ps/awk not available or no orphans */ }
+
+      const entries = result.split('\n').filter(Boolean).map(line => {
+        const [pid, cpu] = line.trim().split(/\s+/);
+        return { pid: Number(pid), cpu: parseFloat(cpu) || 0 };
+      });
+
+      for (const { pid, cpu } of entries) {
+        if (cpu < ORPHAN_CPU_IDLE_THRESHOLD) {
+          if (idleOrphans.has(pid)) {
+            // Idle for 2 consecutive checks → safe to kill
+            try {
+              process.kill(pid, 'SIGTERM');
+              console.log(`[sdk] SIGTERM idle orphan PID=${pid} (CPU=${cpu}%, idle for 2 checks)`);
+            } catch { /* already dead */ }
+            idleOrphans.delete(pid);
+          } else {
+            // First time seeing it idle — mark it, kill on next check
+            idleOrphans.add(pid);
+          }
+        } else {
+          // Still working — remove from idle set, let it run
+          idleOrphans.delete(pid);
+        }
+      }
+
+      // Clean up PIDs that disappeared
+      for (const pid of idleOrphans) {
+        if (!entries.some(e => e.pid === pid)) {
+          idleOrphans.delete(pid);
+        }
+      }
+    } catch { /* ps/awk not available */ }
+  }, ORPHAN_CHECK_INTERVAL);
+
+  // Don't prevent Node from exiting
+  orphanCheckTimer.unref();
+}
+
+export function stopOrphanMonitor() {
+  if (orphanCheckTimer) {
+    clearInterval(orphanCheckTimer);
+    orphanCheckTimer = null;
+    idleOrphans.clear();
+  }
 }
 
 // Cleanup deferred — called conditionally from index.ts after task recovery
