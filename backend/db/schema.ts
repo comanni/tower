@@ -233,6 +233,58 @@ function initSchema(db: Database.Database) {
   if (msgFtsCount === 0) {
     populateMessagesFts(db);
   }
+
+  // ── Session identity: UNIQUE claude_session_id (Tower = SSOT) ──
+  // 1. Normalize empty strings → NULL
+  db.exec(`UPDATE sessions SET claude_session_id = NULL WHERE claude_session_id = ''`);
+
+  // 2. Resolve duplicates: for each duplicated claude_session_id,
+  //    keep the one with higher turn_count, NULL the rest
+  const dupes = db.prepare(`
+    SELECT claude_session_id FROM sessions
+    WHERE claude_session_id IS NOT NULL
+    GROUP BY claude_session_id HAVING COUNT(*) > 1
+  `).all() as { claude_session_id: string }[];
+
+  if (dupes.length > 0) {
+    const clearDupe = db.prepare(`
+      UPDATE sessions SET claude_session_id = NULL
+      WHERE claude_session_id = ? AND id != ?
+    `);
+    const findWinner = db.prepare(`
+      SELECT id, tags, turn_count FROM sessions
+      WHERE claude_session_id = ?
+      ORDER BY turn_count DESC, updated_at DESC
+    `);
+
+    const dedupTx = db.transaction(() => {
+      for (const { claude_session_id } of dupes) {
+        const rows = findWinner.all(claude_session_id) as { id: string; tags: string; turn_count: number }[];
+        if (rows.length < 2) continue;
+
+        // Prefer non-CLI session (Tower-created) as the winner
+        let winnerId = rows[0].id;
+        for (const row of rows) {
+          const tags = JSON.parse(row.tags || '[]');
+          if (!tags.includes('cli')) {
+            winnerId = row.id;
+            break;
+          }
+        }
+        clearDupe.run(claude_session_id, winnerId);
+      }
+    });
+    dedupTx();
+    console.log(`[db] Resolved ${dupes.length} duplicate claude_session_id(s)`);
+  }
+
+  // 3. Create UNIQUE INDEX (partial — NULL values are excluded)
+  try {
+    db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_claude_sid
+        ON sessions(claude_session_id) WHERE claude_session_id IS NOT NULL
+    `);
+  } catch {}
 }
 
 function populateMessagesFts(db: Database.Database) {

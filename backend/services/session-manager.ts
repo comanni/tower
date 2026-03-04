@@ -58,7 +58,7 @@ export function updateSession(id: string, updates: Partial<Pick<SessionMeta, 'na
 
   if (updates.name !== undefined) { sets.push('name = ?'); values.push(updates.name); }
   if (updates.cwd !== undefined) { sets.push('cwd = ?'); values.push(updates.cwd); }
-  if (updates.claudeSessionId !== undefined) { sets.push('claude_session_id = ?'); values.push(updates.claudeSessionId); }
+  if (updates.claudeSessionId !== undefined) { sets.push('claude_session_id = ?'); values.push(updates.claudeSessionId || null); }
   if (updates.totalCost !== undefined) { sets.push('total_cost = ?'); values.push(updates.totalCost); }
   if (updates.totalTokens !== undefined) { sets.push('total_tokens = ?'); values.push(updates.totalTokens); }
   if (updates.tags !== undefined) { sets.push('tags = ?'); values.push(JSON.stringify(updates.tags)); }

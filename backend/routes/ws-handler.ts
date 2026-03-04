@@ -2,12 +2,13 @@ import { WebSocketServer, WebSocket } from 'ws';
 import type { Server } from 'http';
 import { v4 as uuidv4 } from 'uuid';
 import os from 'os';
-import { executeQuery, abortSession, cleanupSession, getClaudeSessionId, getActiveSessionCount, getSession as getSDKSession, getRunningSessionIds } from '../services/claude-sdk.js';
+import { executeQuery, abortSession, cleanupSession, getClaudeSessionId, getActiveSessionCount, getSession as getSDKSession, getRunningSessionIds, backupSessionFile } from '../services/claude-sdk.js';
 import { getFileTree, readFile, writeFile, setupFileWatcher, type FileChangeEvent } from '../services/file-system.js';
 import { verifyWsToken, getUserAllowedPath } from '../services/auth.js';
 import { isPathSafe } from '../services/file-system.js';
 import { saveMessage, updateMessageContent, attachToolResultInDb, updateMessageMetrics } from '../services/message-store.js';
 import { getSession, updateSession } from '../services/session-manager.js';
+import { getDb } from '../db/schema.js';
 import { config, getPermissionMode } from '../config.js';
 import { autoCommit } from '../services/git-manager.js';
 import { findSessionClient, abortCleanup, addSessionClient, removeSessionClient, type SessionClient } from './session-guards.js';
@@ -41,6 +42,19 @@ const ASK_USER_TIMEOUT = 60 * 60 * 1000; // 60 minutes
 const clients = new Map<string, WsClient>();
 const sessionClients = new Map<string, Set<string>>(); // sessionId → Set<clientId> (1:many)
 const pendingQuestions = new Map<string, PendingQuestion>(); // questionId → PendingQuestion
+
+/**
+ * Claim a claudeSessionId for a Tower session.
+ * If another session already holds it, clear theirs first (Tower = SSOT, latest wins).
+ */
+function claimClaudeSessionId(towerSessionId: string, claudeSessionId: string) {
+  const db = getDb();
+  db.prepare(
+    `UPDATE sessions SET claude_session_id = NULL
+     WHERE claude_session_id = ? AND id != ?`
+  ).run(claudeSessionId, towerSessionId);
+  updateSession(towerSessionId, { claudeSessionId });
+}
 
 /**
  * Broadcast a message to ALL connected clients (regardless of session).
@@ -518,7 +532,7 @@ async function handleChat(client: WsClient, data: { message: string; messageId?:
         // a duplicate session before streaming completes.
         if (!loopClaudeSessionId) {
           try {
-            updateSession(sessionId, { claudeSessionId: message.session_id });
+            claimClaudeSessionId(sessionId, message.session_id);
           } catch (err) { console.error('[ws] early claudeSessionId persist failed:', err); }
         }
         loopClaudeSessionId = message.session_id;
@@ -654,10 +668,13 @@ async function handleChat(client: WsClient, data: { message: string; messageId?:
           turnCount: newTurnCount,
           filesEdited: mergedFiles,
           modelUsed: data.model,
-          ...(finalClaudeSessionId ? { claudeSessionId: finalClaudeSessionId } : {}),
         });
         if (finalClaudeSessionId) {
+          claimClaudeSessionId(sessionId, finalClaudeSessionId);
           console.log(`[ws] persisted claudeSessionId=${finalClaudeSessionId.slice(0, 12)}… for session=${sessionId.slice(0, 8)}`);
+          // Back up the .jsonl file so we can restore if Claude Code deletes it
+          const sessionCwd = data.cwd || currentSession.cwd || config.defaultCwd;
+          backupSessionFile(finalClaudeSessionId, sessionCwd);
         }
       }
     } catch (err) { console.error('[ws] updateSession failed:', err); }

@@ -114,6 +114,66 @@ export interface ClaudeSession {
 
 const activeSessions = new Map<string, ClaudeSession>();
 
+// Session file backup directory — protects against external .jsonl deletion
+const SESSION_BACKUP_DIR = path.join(process.cwd(), 'data', 'session-backups');
+
+/** Get the SDK .jsonl file path for a given claudeSessionId and cwd */
+function getJsonlPath(claudeSessionId: string, cwd: string): string {
+  const encodedCwd = cwd.replace(/\//g, '-');
+  return path.join(os.homedir(), '.claude', 'projects', encodedCwd, `${claudeSessionId}.jsonl`);
+}
+
+/** Get the backup path for a .jsonl file */
+function getBackupPath(claudeSessionId: string): string {
+  return path.join(SESSION_BACKUP_DIR, `${claudeSessionId}.jsonl`);
+}
+
+/**
+ * Back up a .jsonl session file after a successful turn.
+ * If the SDK or CLI later deletes the original, we can restore it.
+ */
+export function backupSessionFile(claudeSessionId: string, cwd: string): boolean {
+  const jsonlPath = getJsonlPath(claudeSessionId, cwd);
+  if (!fs.existsSync(jsonlPath)) return false;
+
+  try {
+    if (!fs.existsSync(SESSION_BACKUP_DIR)) {
+      fs.mkdirSync(SESSION_BACKUP_DIR, { recursive: true });
+    }
+    fs.copyFileSync(jsonlPath, getBackupPath(claudeSessionId));
+    return true;
+  } catch (err: any) {
+    console.warn(`[sdk] backup failed for ${claudeSessionId.slice(0, 12)}: ${err.message}`);
+    return false;
+  }
+}
+
+/**
+ * Restore a .jsonl session file from backup if the original is missing.
+ * Returns true if restored, false if no backup available.
+ */
+function restoreSessionFile(claudeSessionId: string, cwd: string): boolean {
+  const jsonlPath = getJsonlPath(claudeSessionId, cwd);
+  if (fs.existsSync(jsonlPath)) return true; // original exists, no need
+
+  const backupPath = getBackupPath(claudeSessionId);
+  if (!fs.existsSync(backupPath)) return false; // no backup
+
+  try {
+    // Ensure target directory exists
+    const dir = path.dirname(jsonlPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.copyFileSync(backupPath, jsonlPath);
+    console.log(`[sdk] restored .jsonl from backup: ${claudeSessionId.slice(0, 12)}`);
+    return true;
+  } catch (err: any) {
+    console.warn(`[sdk] restore from backup failed for ${claudeSessionId.slice(0, 12)}: ${err.message}`);
+    return false;
+  }
+}
+
 /**
  * Repair a .jsonl session file by removing corrupted trailing lines.
  * When a CLI process is killed mid-write, the last line may be truncated JSON.
@@ -121,9 +181,7 @@ const activeSessions = new Map<string, ClaudeSession>();
  * Fix: read backwards, remove lines that aren't valid JSON, keep the rest.
  */
 function repairSessionFile(claudeSessionId: string, cwd: string): boolean {
-  // The SDK stores .jsonl files in ~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl
-  const encodedCwd = cwd.replace(/\//g, '-');
-  const jsonlPath = path.join(os.homedir(), '.claude', 'projects', encodedCwd, `${claudeSessionId}.jsonl`);
+  const jsonlPath = getJsonlPath(claudeSessionId, cwd);
 
   if (!fs.existsSync(jsonlPath)) return false;
 
@@ -219,28 +277,22 @@ export async function* executeQuery(
   };
 
   if (options.resumeSessionId) {
-    // Pre-validate: check if the .jsonl file actually exists before attempting resume.
-    // If the file is gone (cleaned up, expired, or server restart), skip resume silently
-    // instead of crashing with "exited with code 1" and showing a scary warning.
     const resumeCwd = queryOptions.cwd || config.defaultCwd;
-    const encodedCwd = resumeCwd.replace(/\//g, '-');
-    const jsonlPath = path.join(os.homedir(), '.claude', 'projects', encodedCwd, `${options.resumeSessionId}.jsonl`);
+    const jsonlPath = getJsonlPath(options.resumeSessionId, resumeCwd);
+
+    // If the original .jsonl is missing, try restoring from our backup
+    if (!fs.existsSync(jsonlPath)) {
+      restoreSessionFile(options.resumeSessionId, resumeCwd);
+    }
+
     if (fs.existsSync(jsonlPath)) {
       // Repair .jsonl before resume — removes corrupted trailing lines from killed processes
       repairSessionFile(options.resumeSessionId, resumeCwd);
       queryOptions.resume = options.resumeSessionId;
       console.log(`[sdk] resume attempt: session=${sessionId.slice(0,8)} claudeSid=${options.resumeSessionId.slice(0,12)} cwd=${queryOptions.cwd}`);
     } else {
-      console.log(`[sdk] resume skipped (file gone): session=${sessionId.slice(0,8)} claudeSid=${options.resumeSessionId.slice(0,12)} cwd=${queryOptions.cwd}`);
-      // Clear the stale claudeSessionId so the next fresh session ID gets stored
+      console.log(`[sdk] resume skipped (no file, no backup): session=${sessionId.slice(0,8)} claudeSid=${options.resumeSessionId.slice(0,12)} cwd=${queryOptions.cwd}`);
       session.claudeSessionId = undefined;
-      // Notify callers so they can update DB and inform the user
-      yield {
-        type: 'system',
-        subtype: 'resume_failed',
-        session_id: sessionId,
-        message: 'Previous conversation context could not be restored (session file missing). Starting fresh.',
-      } as any;
     }
   }
 
