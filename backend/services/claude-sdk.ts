@@ -219,10 +219,22 @@ export async function* executeQuery(
   };
 
   if (options.resumeSessionId) {
-    // Repair .jsonl before resume — removes corrupted trailing lines from killed processes
-    repairSessionFile(options.resumeSessionId, queryOptions.cwd || config.defaultCwd);
-    queryOptions.resume = options.resumeSessionId;
-    console.log(`[sdk] resume attempt: session=${sessionId.slice(0,8)} claudeSid=${options.resumeSessionId.slice(0,12)} cwd=${queryOptions.cwd}`);
+    // Pre-validate: check if the .jsonl file actually exists before attempting resume.
+    // If the file is gone (cleaned up, expired, or server restart), skip resume silently
+    // instead of crashing with "exited with code 1" and showing a scary warning.
+    const resumeCwd = queryOptions.cwd || config.defaultCwd;
+    const encodedCwd = resumeCwd.replace(/\//g, '-');
+    const jsonlPath = path.join(os.homedir(), '.claude', 'projects', encodedCwd, `${options.resumeSessionId}.jsonl`);
+    if (fs.existsSync(jsonlPath)) {
+      // Repair .jsonl before resume — removes corrupted trailing lines from killed processes
+      repairSessionFile(options.resumeSessionId, resumeCwd);
+      queryOptions.resume = options.resumeSessionId;
+      console.log(`[sdk] resume attempt: session=${sessionId.slice(0,8)} claudeSid=${options.resumeSessionId.slice(0,12)} cwd=${queryOptions.cwd}`);
+    } else {
+      console.log(`[sdk] resume skipped (file gone): session=${sessionId.slice(0,8)} claudeSid=${options.resumeSessionId.slice(0,12)} cwd=${queryOptions.cwd}`);
+      // Clear the stale claudeSessionId so the next fresh session ID gets stored
+      session.claudeSessionId = undefined;
+    }
   }
 
   // Helper: run query and yield messages
@@ -245,10 +257,14 @@ export async function* executeQuery(
     }
   }
 
+  // Helper: check if an error is an abort (SDK may throw Error with message, not AbortError)
+  const isAbortError = (err: any) =>
+    err.name === 'AbortError' || /aborted by user|abort/i.test(err.message || '');
+
   try {
     yield* runQuery(queryOptions);
   } catch (error: any) {
-    if (error.name === 'AbortError') {
+    if (isAbortError(error)) {
       return;
     }
     // Resume failed (exit code 1, stale session) → retry without resume
@@ -267,7 +283,7 @@ export async function* executeQuery(
       try {
         yield* runQuery(freshOptions);
       } catch (retryError: any) {
-        if (retryError.name === 'AbortError') return;
+        if (isAbortError(retryError)) return;
         throw retryError;
       }
     } else {

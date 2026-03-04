@@ -682,8 +682,11 @@ async function handleChat(client: WsClient, data: { message: string; messageId?:
     });
   } catch (error: any) {
     console.error(`[ws] handleChat ERROR session=${sessionId}:`, error.message || error);
-    // Clear stale claudeSessionId so next attempt doesn't retry the same broken resume
-    if (resumeSessionId && /exited with code|ENOENT|session.*not found|aborted/i.test(error.message || '')) {
+    const isAbort = /aborted by user|abort/i.test(error.message || '') || error.name === 'AbortError';
+    // Clear stale claudeSessionId so next attempt doesn't retry the same broken resume.
+    // But NOT on abort — abort means the session was running fine and we should keep
+    // the claudeSessionId for future resume.
+    if (!isAbort && resumeSessionId && /exited with code|ENOENT|session.*not found/i.test(error.message || '')) {
       try { updateSession(sessionId, { claudeSessionId: '' }); } catch {}
       console.warn(`[ws] cleared stale claudeSessionId for session=${sessionId}`);
     }
