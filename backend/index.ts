@@ -14,6 +14,7 @@ import { initWorkspaceRepo } from './services/git-manager.js';
 import { resumeOrphanedTaskMonitoring, hasMonitoredTasks, stopAllMonitors } from './services/task-runner.js';
 import { cleanupOrphanedSdkProcesses, stopOrphanMonitor, gracefulShutdown } from './services/claude-sdk.js';
 import { startScheduler, stopScheduler } from './services/task-scheduler.js';
+import { cleanupStaleSessions } from './services/session-manager.js';
 
 // CRITICAL: Remove CLAUDECODE env var before anything else
 delete process.env.CLAUDECODE;
@@ -89,6 +90,11 @@ server.listen(config.port, config.host, () => {
 ║  CWD: ${config.defaultCwd.slice(0, 30)}  ║
 ╚══════════════════════════════════════════╝
   `);
+
+  // Clean up stale chat session claudeSessionIds where .jsonl is gone.
+  // Must run BEFORE orphan monitoring — ensures chat sessions don't attempt
+  // resume from missing files (kanban tasks already handle this via recoverZombieTasks).
+  cleanupStaleSessions();
 
   // Recover tasks that survived the restart, then start orphan monitor.
   // The monitor only kills idle orphans (CPU < 1% for 2 checks), so it's safe

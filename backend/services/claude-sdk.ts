@@ -234,6 +234,13 @@ export async function* executeQuery(
       console.log(`[sdk] resume skipped (file gone): session=${sessionId.slice(0,8)} claudeSid=${options.resumeSessionId.slice(0,12)} cwd=${queryOptions.cwd}`);
       // Clear the stale claudeSessionId so the next fresh session ID gets stored
       session.claudeSessionId = undefined;
+      // Notify callers so they can update DB and inform the user
+      yield {
+        type: 'system',
+        subtype: 'resume_failed',
+        session_id: sessionId,
+        message: 'Previous conversation context could not be restored (session file missing). Starting fresh.',
+      } as any;
     }
   }
 

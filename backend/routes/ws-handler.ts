@@ -524,8 +524,13 @@ async function handleChat(client: WsClient, data: { message: string; messageId?:
         loopClaudeSessionId = message.session_id;
       }
 
-      // Forward resume failure notification to the client
+      // Forward resume failure notification to the client and clear stale DB value
       if ((message as any).type === 'system' && (message as any).subtype === 'resume_failed') {
+        // Clear the stale claudeSessionId from DB so future messages don't retry
+        if (resumeSessionId) {
+          try { updateSession(sessionId, { claudeSessionId: '' }); } catch {}
+          console.warn(`[ws] resume_failed: cleared stale claudeSessionId for session=${sessionId.slice(0,8)}`);
+        }
         broadcastToSession(sessionId, {
           type: 'resume_failed',
           sessionId,

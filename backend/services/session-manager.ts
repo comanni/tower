@@ -158,6 +158,37 @@ export function permanentlyDeleteSession(id: string): boolean {
 }
 
 
+/**
+ * Startup cleanup: clear stale claudeSessionId values where the .jsonl file no longer exists.
+ * Without this, the first message in a chat session after restart tries to resume from a gone
+ * .jsonl file. Kanban tasks already handle this via recoverZombieTasks(), but regular chat
+ * sessions had no equivalent — causing resume failures only for chat.
+ */
+export function cleanupStaleSessions(): number {
+  const db = getDb();
+  const rows = db.prepare(
+    `SELECT id, claude_session_id, cwd FROM sessions
+     WHERE claude_session_id IS NOT NULL AND claude_session_id != ''
+       AND (archived IS NULL OR archived = 0)`
+  ).all() as { id: string; claude_session_id: string; cwd: string }[];
+
+  let cleared = 0;
+  for (const row of rows) {
+    const encodedCwd = row.cwd.replace(/\//g, '-');
+    const jsonlPath = path.join(os.homedir(), '.claude', 'projects', encodedCwd, `${row.claude_session_id}.jsonl`);
+
+    if (!fs.existsSync(jsonlPath)) {
+      db.prepare('UPDATE sessions SET claude_session_id = NULL WHERE id = ?').run(row.id);
+      cleared++;
+    }
+  }
+
+  if (cleared > 0) {
+    console.log(`[session-manager] Cleared ${cleared} stale claudeSessionId(s) (missing .jsonl files)`);
+  }
+  return cleared;
+}
+
 /** Scan Claude native session files from ~/.claude/projects/ */
 export function scanClaudeNativeSessions(): { sessionId: string; projectPath: string; modified: string }[] {
   const claudeDir = path.join(os.homedir(), '.claude', 'projects');
