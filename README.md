@@ -16,7 +16,7 @@ Your team gives commands. Tower orchestrates the process. The results accumulate
 
 Create a task. Claude executes it. Done.
 
-But here's where it gets interesting: **tasks can create tasks.** A single "Set up our CI/CD pipeline" spawns sub-tasks for linting, testing, building, and deploying — each running autonomously, each reporting back. A quarterly planning task breaks itself into twelve weekly sprints. An onboarding task generates personalized checklists for every new hire.
+But here's where it gets interesting: **tasks can create tasks.** A single "Plan our product launch" spawns sub-tasks for market research, competitor analysis, pricing strategy, and launch timeline — each running autonomously, each reporting back. A quarterly planning task breaks itself into twelve weekly sprints. An onboarding task generates personalized checklists for every new hire.
 
 This isn't a to-do list. It's a **self-expanding automation engine.** You describe the outcome. Tower figures out the steps, creates the work items, and executes them — while you watch from the kanban board.
 
@@ -24,7 +24,7 @@ This isn't a to-do list. It's a **self-expanding automation engine.** You descri
   <img src="capture-board.png" alt="Tower — Agent Board with autonomous task execution" width="720" />
 </p>
 
-Every business process that can be described can be automated: reports that write themselves on schedule, code reviews that run on every PR, client proposals that draft themselves from templates, data pipelines that monitor and fix themselves. The board is your control room. The agents are your workforce.
+Every business process that can be described can be automated: weekly reports that write themselves on schedule, client proposals that draft themselves from templates, market research that compiles and summarizes overnight, employee onboarding that runs itself. The board is your control room. The agents are your workforce.
 
 ---
 
