@@ -204,7 +204,7 @@ export function NewTaskModal({ onClose, onCreated }: NewTaskModalProps) {
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [cwd, setCwd] = useState(activeSession?.cwd || '/home/enterpriseai/workspace');
+  const [cwd, setCwd] = useState(activeSession?.cwd || '');
   const [model, setModel] = useState('claude-opus-4-6');
   const [workflow, setWorkflow] = useState('auto');
   const [submitting, setSubmitting] = useState(false);

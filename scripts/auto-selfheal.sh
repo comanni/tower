@@ -20,7 +20,7 @@
 
 set -uo pipefail
 
-APP_DIR="/home/enterpriseai/claude-desk"
+APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BACKEND_PORT=32355
 FRONTEND_PORT=32354
 LOCK="/tmp/tower-selfheal.lock"

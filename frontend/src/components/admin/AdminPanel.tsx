@@ -581,7 +581,7 @@ function SystemPromptEditor({ token }: { token?: string | null }) {
             <br/>
             User: john (role: member)<br/>
             System package management requires IT team assistance.<br/>
-            Your workspace is restricted to: /home/enterpriseai/workspace
+            Your workspace is restricted to: ~/workspace
           </div>
         </div>
       </div>

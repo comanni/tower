@@ -31,7 +31,7 @@ interface PublishPanelProps {
 }
 
 const HUB_BASE = '/hub/api';
-const PUBLIC_HOST = 'desk.moatai.app';
+const PUBLIC_HOST = window.location.host;
 
 export function PublishPanel({ open, onClose }: PublishPanelProps) {
   const [sites, setSites] = useState<Site[]>([]);
