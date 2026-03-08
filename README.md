@@ -124,6 +124,14 @@ New team member joins the marketing project? Claude already knows the brand voic
 
 Ask Claude to create a report, a dashboard, a proposal — see it **immediately** in a built-in viewer. HTML with charts, Markdown with syntax highlighting, PDF inline. No downloads, no extra apps. It feels like Notion — except everything is AI-generated, git-versioned, and searchable.
 
+### 🚀 Publishing Hub
+
+Turn any AI-generated artifact into a live site or app with one click. Claude builds a dashboard? Publish it. A client proposal? Share it. Internal tool? Deploy it. Everything runs on your server — no external hosting, no vendor lock-in.
+
+<p align="center">
+  <img src="capture-publish.png" alt="Tower — Publishing Hub with live sites and apps" width="720" />
+</p>
+
 ### 🔧 Git Integration
 
 Auto-commit on every Claude edit. Every change is tracked, attributed, and reversible. Roll back to any point in history.
@@ -202,6 +210,7 @@ See **[INSTALL.md](INSTALL.md)** for detailed setup, environment variables, proj
 | **Git Integration** | Auto-commit on Claude edits, commit history, diff viewer, rollback. |
 | **Admin Panel** | User management, role-based permissions, per-user workspace restrictions. |
 | **Kanban Board** | Task management with drag-and-drop, AI-powered task execution. |
+| **Publishing Hub** | One-click deploy of AI-generated sites and apps to your own server. |
 | **Mobile + Voice** | Responsive PWA. Native dictation → full server compute from anywhere. |
 
 ---
