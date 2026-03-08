@@ -12,6 +12,22 @@ Your team gives commands. Tower orchestrates the process. The results accumulate
 
 ---
 
+## Automate Everything
+
+Create a task. Claude executes it. Done.
+
+But here's where it gets interesting: **tasks can create tasks.** A single "Set up our CI/CD pipeline" spawns sub-tasks for linting, testing, building, and deploying — each running autonomously, each reporting back. A quarterly planning task breaks itself into twelve weekly sprints. An onboarding task generates personalized checklists for every new hire.
+
+This isn't a to-do list. It's a **self-expanding automation engine.** You describe the outcome. Tower figures out the steps, creates the work items, and executes them — while you watch from the kanban board.
+
+<p align="center">
+  <img src="capture-board.png" alt="Tower — Agent Board with autonomous task execution" width="720" />
+</p>
+
+Every business process that can be described can be automated: reports that write themselves on schedule, code reviews that run on every PR, client proposals that draft themselves from templates, data pipelines that monitor and fix themselves. The board is your control room. The agents are your workforce.
+
+---
+
 ## The Big Picture
 
 Every day, your team produces work. Code gets written, decisions get made, documents get created, problems get solved.
@@ -138,11 +154,7 @@ Auto-commit on every Claude edit. Every change is tracked, attributed, and rever
 
 ### 📋 Agent Board
 
-Delegate tasks to Claude and watch them execute autonomously. Drag-and-drop kanban with Todo → In Progress → Done. Each task gets its own Claude session, its own working directory, and reports progress in real time.
-
-<p align="center">
-  <img src="capture-board.png" alt="Tower — AI-powered kanban board with autonomous task execution" width="720" />
-</p>
+Drag-and-drop kanban with autonomous AI execution. Tasks spawn sub-tasks, sub-tasks spawn more — entire workflows run themselves. See [Automate Everything](#automate-everything) above.
 
 ### 📱 Mobile + Voice
 
