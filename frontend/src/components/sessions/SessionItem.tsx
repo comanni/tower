@@ -171,8 +171,8 @@ export function SessionItem({ session, isActive, onSelect, onDelete, onRename, o
             queued {queueCount}
           </span>
         ) : isUnread ? (
-          <span className="shrink-0 text-[9px] font-semibold text-primary-300 bg-primary-500/10 border border-primary-500/20 rounded px-1 py-0.5 leading-none">
-            unread
+          <span className="shrink-0 text-[9px] font-semibold text-green-400 bg-green-400/10 border border-green-400/20 rounded px-1 py-0.5 leading-none">
+            done
           </span>
         ) : session.favorite ? (
           <button

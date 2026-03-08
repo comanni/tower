@@ -862,7 +862,8 @@ function ProjectGroup({
   const streamingSessions = useSessionStore((s) => s.streamingSessions);
   const unreadSessions = useSessionStore((s) => s.unreadSessions);
   const hasActivity = groupSessions.some((s) => streamingSessions.has(s.id));
-  const hasUnread = groupSessions.some((s) => unreadSessions.has(s.id));
+  const doneCount = groupSessions.filter((s) => unreadSessions.has(s.id)).length;
+  const hasUnread = doneCount > 0;
 
   useEffect(() => {
     if (editing) editRef.current?.focus();
@@ -948,34 +949,30 @@ function ProjectGroup({
               className="w-full h-[22px] bg-surface-700 text-gray-100 text-[13px] px-1 rounded border border-surface-600 outline-none focus:border-primary-500"
             />
           ) : (
-            <>
-              <div className="flex items-center gap-1.5">
-                <span className={`text-[13px] font-bold truncate ${hasUnread || hasActivity ? 'text-gray-100' : 'text-gray-300'}`}>
-                  {project.name}
+            <div className="flex items-center gap-1.5">
+              <span className={`text-[13px] font-bold truncate ${hasUnread || hasActivity ? 'text-gray-100' : 'text-gray-300'}`}>
+                {project.name}
+              </span>
+              <span className="text-[10px] tabular-nums shrink-0 text-surface-600">
+                {groupSessions.length}
+              </span>
+              {doneCount > 0 && (
+                <span className="text-[9px] font-semibold text-green-400 bg-green-400/10 border border-green-400/20 rounded px-1 py-0.5 leading-none shrink-0">
+                  {doneCount} done
                 </span>
-                <span className={`text-[10px] tabular-nums shrink-0 ${hasUnread ? 'text-primary-400 font-semibold' : 'text-surface-600'}`}>
-                  {groupSessions.length}
-                </span>
-              </div>
-              {/* Subline: New Chat + N more */}
-              <div className="flex items-center gap-2 mt-0.5">
-                <button
-                  onClick={(e) => { e.stopPropagation(); onNewSession(); }}
-                  className="text-[10px] text-primary-400 hover:text-primary-300 transition-colors font-medium"
-                  title="New Chat in project"
-                >
-                  + New Chat
-                </button>
-                {groupSessions.length > PROJECT_PREVIEW_COUNT && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
-                    className="text-[10px] text-surface-600 hover:text-primary-400 transition-colors"
-                  >
-                    {expanded ? 'show less' : `${groupSessions.length - PROJECT_PREVIEW_COUNT} more`}
-                  </button>
-                )}
-              </div>
-            </>
+              )}
+              <button
+                onClick={(e) => { e.stopPropagation(); setCtxMenu({ x: e.currentTarget.getBoundingClientRect().right, y: e.currentTarget.getBoundingClientRect().bottom + 4 }); }}
+                className="p-0.5 rounded text-surface-600 hover:text-gray-300 hover:bg-surface-700/50 transition-all shrink-0 ml-auto"
+                aria-label="Project actions"
+              >
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  <circle cx="12" cy="5" r="1.5" />
+                  <circle cx="12" cy="12" r="1.5" />
+                  <circle cx="12" cy="19" r="1.5" />
+                </svg>
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -1010,6 +1007,10 @@ function ProjectGroup({
           onRename={() => { setEditing(true); setEditName(project.name); }}
           onDelete={handleDelete}
           onClose={() => setCtxMenu(null)}
+          onNewChat={onNewSession}
+          sessionCount={groupSessions.length}
+          expanded={expanded}
+          onToggleExpanded={() => setExpanded(!expanded)}
         />
       )}
     </div>
@@ -1018,10 +1019,14 @@ function ProjectGroup({
 
 /* ── Project Context Menu ── */
 
-function ProjectContextMenu({ x, y, project, onRename, onDelete, onClose }: {
+function ProjectContextMenu({ x, y, project, onRename, onDelete, onClose, onNewChat, sessionCount, expanded, onToggleExpanded }: {
   x: number; y: number; project: Project;
   onRename: () => void; onDelete: () => void;
   onClose: () => void;
+  onNewChat: () => void;
+  sessionCount: number;
+  expanded: boolean;
+  onToggleExpanded: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -1046,6 +1051,24 @@ function ProjectContextMenu({ x, y, project, onRename, onDelete, onClose }: {
   return (
     <div ref={ref} className="fixed z-50 bg-surface-800 border border-surface-700 rounded-lg shadow-xl py-1 min-w-[160px]"
       style={{ left: x, top: y }}>
+      {/* New Chat */}
+      <button className={itemClass} onClick={() => { onNewChat(); onClose(); }}>
+        <svg className="w-3.5 h-3.5 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+        </svg>
+        New Chat
+      </button>
+      {/* Show all / Show less */}
+      {sessionCount > PROJECT_PREVIEW_COUNT && (
+        <button className={itemClass} onClick={() => { onToggleExpanded(); onClose(); }}>
+          <svg className={`w-3.5 h-3.5 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+          {expanded ? 'Show less' : `Show all ${sessionCount}`}
+        </button>
+      )}
+      <div className="border-t border-surface-700/50 my-1" />
+      {/* Rename */}
       <button className={itemClass} onClick={() => { onRename(); onClose(); }}>
         <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}

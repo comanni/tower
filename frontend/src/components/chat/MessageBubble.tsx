@@ -257,7 +257,7 @@ export function MessageBubble({ message, onFileClick, onRetry, showMetrics, isLa
           <div className="relative space-y-2.5">
             <CopyButton
               text={getMessageText(message.content)}
-              className="absolute -top-1 -right-1 opacity-0 group-hover/message:opacity-100 z-10"
+              className="absolute -top-1 -right-1 opacity-40 hover:opacity-100 transition-opacity z-10"
             />
             {groups.map((group, gi) => {
               // Tool use blocks — chip layout (single or multiple)

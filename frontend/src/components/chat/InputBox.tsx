@@ -60,6 +60,28 @@ export function InputBox({ onSend, onAbort }: InputBoxProps) {
   const slashCommands = useChatStore((s) => s.slashCommands);
   const attachments = useChatStore((s) => s.attachments);
 
+  // Pre-load slash commands from /api/commands so they're available before first message
+  useEffect(() => {
+    if (slashCommands.length > 0) return; // already loaded via SDK init
+    const tk = localStorage.getItem('token');
+    const hdrs: Record<string, string> = {};
+    if (tk) hdrs['Authorization'] = `Bearer ${tk}`;
+    fetch('/api/commands', { headers: hdrs })
+      .then((r) => r.ok ? r.json() : [])
+      .then((cmds: Array<{ name: string; description: string; source: string }>) => {
+        if (cmds.length > 0 && useChatStore.getState().slashCommands.length === 0) {
+          useChatStore.getState().setSystemInfo({
+            slashCommands: cmds.map((c) => ({
+              name: c.name.replace(/^\//, ''),
+              description: c.description,
+              source: c.source as 'commands' | 'sdk' | 'skills',
+            })),
+          });
+        }
+      })
+      .catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Save/restore per-session draft when session changes
   const prevSessionRef = useRef<string | null>(null);
   useEffect(() => {

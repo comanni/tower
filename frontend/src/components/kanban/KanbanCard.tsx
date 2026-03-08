@@ -89,7 +89,7 @@ function CardMoreMenu({ task, onSpawn, onSchedule, onCleanupWorktree, onDelete, 
     <div ref={ref} className="relative">
       <button
         onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
-        className="opacity-60 hover:opacity-100 text-gray-400 hover:text-gray-200 transition-all p-0.5 rounded"
+        className="text-gray-500 hover:text-gray-200 transition-all p-1 rounded hover:bg-surface-700/50"
         title="More actions"
         aria-label="More actions"
       >
