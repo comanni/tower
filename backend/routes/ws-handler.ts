@@ -727,7 +727,10 @@ async function handleChat(client: WsClient, data: { message: string; messageId?:
     // Clear stale claudeSessionId so next attempt doesn't retry the same broken resume.
     // But NOT on abort — abort means the session was running fine and we should keep
     // the claudeSessionId for future resume.
-    if (!isAbort && resumeSessionId && /exited with code|ENOENT|session.*not found/i.test(error.message || '')) {
+    // Also NOT on ENOENT — that means the claude binary is temporarily missing,
+    // not that the session data is corrupt. Clearing would lose resume ability.
+    const isSpawnError = /ENOENT|spawn.*failed/i.test(error.message || '');
+    if (!isAbort && !isSpawnError && resumeSessionId && /exited with code|session.*not found/i.test(error.message || '')) {
       try { updateSession(sessionId, { claudeSessionId: '' }); } catch {}
       console.warn(`[ws] cleared stale claudeSessionId for session=${sessionId}`);
     }
