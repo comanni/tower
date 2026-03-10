@@ -2,6 +2,7 @@ import { getDb } from '../db/schema.js';
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 
 const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT || path.join(process.env.HOME || '/tmp', 'workspace');
 
@@ -93,6 +94,19 @@ export function updateProject(id: string, updates: Partial<{
   archived: number;
 }>): Project | null {
   const db = getDb();
+
+  // ── Safe Rename: when name changes, cascade folder + sessions + CLAUDE.md ──
+  if (updates.name !== undefined) {
+    const current = getProject(id);
+    if (current && updates.name !== current.name && current.rootPath) {
+      const renamed = _cascadeRename(current, updates.name, db);
+      if (renamed.newRootPath) {
+        // Override rootPath so the DB update below picks it up
+        updates.rootPath = renamed.newRootPath;
+      }
+    }
+  }
+
   const sets: string[] = [];
   const vals: any[] = [];
   if (updates.name !== undefined) { sets.push('name = ?'); vals.push(updates.name); }
@@ -106,6 +120,110 @@ export function updateProject(id: string, updates: Partial<{
   vals.push(id);
   db.prepare(`UPDATE projects SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
   return getProject(id);
+}
+
+/**
+ * Cascade rename: moves the project folder and updates all references.
+ * Only applies to workspace-managed folders (under WORKSPACE_ROOT/projects/).
+ * External rootPaths (e.g. ~/claude-desk) are left untouched — only CLAUDE.md title is updated.
+ */
+function _cascadeRename(
+  current: Project,
+  newName: string,
+  db: ReturnType<typeof getDb>
+): { newRootPath: string | null } {
+  const oldRootPath = current.rootPath!;
+  const workspaceProjectsDir = path.join(WORKSPACE_ROOT, 'projects');
+  const isWorkspaceManaged = oldRootPath.startsWith(workspaceProjectsDir + path.sep);
+
+  // 1. Update CLAUDE.md title (works for both workspace-managed and external folders)
+  _updateClaudeMdTitle(oldRootPath, current.name, newName);
+
+  // 2. For external rootPaths (e.g. ~/claude-desk), don't move the folder
+  if (!isWorkspaceManaged) {
+    return { newRootPath: null };
+  }
+
+  // 3. Compute new folder path from new name
+  const newSlug = slugify(newName);
+  let newDir = path.join(workspaceProjectsDir, newSlug);
+
+  // Avoid collision: if target already exists (and isn't the same folder), append id prefix
+  if (fs.existsSync(newDir) && newDir !== oldRootPath) {
+    newDir = `${newDir}-${current.id.slice(0, 8)}`;
+  }
+
+  // If the path wouldn't actually change, skip filesystem ops
+  if (newDir === oldRootPath) {
+    return { newRootPath: null };
+  }
+
+  // 4. Rename the actual folder
+  try {
+    fs.renameSync(oldRootPath, newDir);
+  } catch (err: any) {
+    // If rename fails (e.g. cross-device), fall back to just updating DB
+    console.error(`[project-manager] folder rename failed: ${err.message}`);
+    return { newRootPath: null };
+  }
+
+  // 5. Update session cwd for all sessions that referenced the old path
+  //    Exact match OR subpaths only (old/subdir → new/subdir).
+  //    Must NOT match sibling folders that share a prefix (e.g. yujin vs yujinrfp).
+  const sessions = db.prepare(
+    `SELECT id, cwd FROM sessions WHERE cwd = ? OR cwd LIKE ? || '/%'`
+  ).all(oldRootPath, oldRootPath) as { id: string; cwd: string }[];
+
+  if (sessions.length > 0) {
+    const updateStmt = db.prepare('UPDATE sessions SET cwd = ? WHERE id = ?');
+    const tx = db.transaction(() => {
+      for (const s of sessions) {
+        const newCwd = newDir + s.cwd.slice(oldRootPath.length);
+        updateStmt.run(newCwd, s.id);
+      }
+    });
+    tx();
+  }
+
+  // 6. Rename SDK project directory so resume (.jsonl files) keeps working.
+  //    SDK stores session data at ~/.claude/projects/<encoded-cwd>/
+  //    where encoded-cwd replaces / and _ with -
+  try {
+    const claudeProjectsDir = path.join(os.homedir(), '.claude', 'projects');
+    const encode = (p: string) => p.replace(/\//g, '-').replace(/_/g, '-');
+    const oldSdkDir = path.join(claudeProjectsDir, encode(oldRootPath));
+    const newSdkDir = path.join(claudeProjectsDir, encode(newDir));
+    if (fs.existsSync(oldSdkDir) && !fs.existsSync(newSdkDir)) {
+      fs.renameSync(oldSdkDir, newSdkDir);
+      console.log(`[project-manager] SDK dir renamed: ${encode(oldRootPath)} → ${encode(newDir)}`);
+    }
+  } catch (err: any) {
+    // Non-critical — resume will fail but conversation history in Tower DB is preserved
+    console.warn(`[project-manager] SDK dir rename failed: ${err.message}`);
+  }
+
+  console.log(`[project-manager] renamed: ${oldRootPath} → ${newDir} (${sessions.length} sessions updated)`);
+  return { newRootPath: newDir };
+}
+
+/**
+ * Update the first H1 title in CLAUDE.md to reflect the new project name.
+ */
+function _updateClaudeMdTitle(rootPath: string, oldName: string, newName: string): void {
+  const claudeMdPath = path.join(rootPath, 'CLAUDE.md');
+  try {
+    if (!fs.existsSync(claudeMdPath)) return;
+    let content = fs.readFileSync(claudeMdPath, 'utf-8');
+    // Replace the first H1 line that matches the old project name
+    const oldTitle = `# ${oldName}`;
+    const newTitle = `# ${newName}`;
+    if (content.startsWith(oldTitle)) {
+      content = newTitle + content.slice(oldTitle.length);
+      fs.writeFileSync(claudeMdPath, content, 'utf-8');
+    }
+  } catch {
+    // Non-critical — don't fail the rename if CLAUDE.md update fails
+  }
 }
 
 export function deleteProject(id: string): boolean {

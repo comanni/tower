@@ -171,14 +171,19 @@ export function Sidebar({
     }
 
     const sorted = [...projectGroups.values()].sort((a, b) => {
-      // Most-recently-active project first — by the NEWEST session's updatedAt,
-      // ignoring favorite sort (favorites push old sessions to [0], skewing this)
-      const aLatest = a.sessions.reduce((max, s) => s.updatedAt > max ? s.updatedAt : max, '');
-      const bLatest = b.sessions.reduce((max, s) => s.updatedAt > max ? s.updatedAt : max, '');
+      // Most-recently-active project first — compare as Date to handle
+      // mixed timestamp formats (ISO "2026-03-09T09:25:07Z" vs SQLite "2026-03-09 10:38:33")
+      const toMs = (sessions: SessionMeta[]) =>
+        sessions.reduce((max, s) => {
+          const t = new Date(s.updatedAt.includes('T') ? s.updatedAt : s.updatedAt.replace(' ', 'T') + 'Z').getTime();
+          return t > max ? t : max;
+        }, 0);
+      const aMs = a.sessions.length ? toMs(a.sessions) : 0;
+      const bMs = b.sessions.length ? toMs(b.sessions) : 0;
       // Projects with sessions always before empty ones
-      if (aLatest && !bLatest) return -1;
-      if (!aLatest && bLatest) return 1;
-      if (aLatest && bLatest) return bLatest.localeCompare(aLatest);
+      if (aMs && !bMs) return -1;
+      if (!aMs && bMs) return 1;
+      if (aMs && bMs) return bMs - aMs;
       // Both empty — fall back to sortOrder
       return a.project.sortOrder - b.project.sortOrder;
     });
@@ -893,7 +898,9 @@ function ProjectGroup({
           method: 'PATCH', headers, body: JSON.stringify({ name: trimmed }),
         });
         if (res.ok) {
-          useProjectStore.getState().updateProject(project.id, { name: trimmed });
+          const updated = await res.json();
+          // Sync all cascaded changes (name + rootPath if folder was renamed)
+          useProjectStore.getState().updateProject(project.id, updated);
         }
       } catch {}
     }
