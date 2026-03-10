@@ -1,47 +1,57 @@
 # Tower
 
-**Your team's AI that builds its own tools.**
+**The road to 100% AI-augmented corporation.**
 
 🌐 [English](README.md) · [한국어](README.ko.md)
 
 <p align="center">
-  <img src="capture-chat.png" alt="Tower — chat with Claude Code in the browser" width="720" />
+  <img src="capture-chat.png" alt="Tower — every AI conversation, shared like Google Docs" width="720" />
 </p>
 
-Tower turns Claude Code into a **team-wide AI command center**. Chat in the browser. Automate from the board. Every session is recorded, every decision is logged, every file change is tracked. What one person teaches Claude, everyone benefits from.
+The strongest organization is one where 100% of the team works with AI — not just developers, not just power users, everyone. The barrier has never been AI itself. It's the terminal, the CLI, the setup, the isolation. Tower removes that barrier.
+
+Every conversation with AI, shared by the whole team like a Google Doc. One file system. One memory. One place where your entire company's AI work happens — visible, searchable, and building on itself.
+
+*In production. $20K revenue in first 2 weeks.*
 
 ---
 
-## Automate Everything
+## The Problem: AI Is Personal. Work Is Not.
 
-Create a task. Claude executes it. **Tasks create tasks.** "Plan our product launch" spawns market research, competitor analysis, pricing, and timeline — each running autonomously. Your weekly reports write themselves. Proposals draft themselves from templates. Onboarding runs itself.
+ChatGPT. Claude Code. Copilot. They're all powerful — and they're all trapped on one person's screen.
 
-<p align="center">
-  <img src="capture-board.png" alt="Tower — Agent Board with autonomous task execution" width="720" />
-</p>
+- Conversations scatter across individual accounts
+- What AI learns in one session dies when the session ends
+- The same questions get asked over and over by different people
+- Non-developers can't even get past the terminal
 
-The board is your control room. The agents are your workforce.
+Even Claude Code — the most capable coding agent — lives in a single terminal. One person benefits. The team doesn't.
 
----
-
-## Why Tower
-
-| | Solo AI | **Tower** |
-|---|---|---|
-| **Who** | One person, one terminal | **Entire team, one browser** |
-| **Output** | Conversations that vanish | **Artifacts — code, docs, decisions** |
-| **Memory** | Dies with the session | **Persists across people and time** |
-| **Growth** | Static | **Builds its own tools** |
+You can hand everyone an AI subscription. That doesn't make you an AI-augmented organization. It makes you a collection of individuals using AI alone.
 
 ---
 
-## What's Inside
+## The Solution: Share AI Like Google Docs
 
-**🛠 20+ Skills** — Brainstorming, debugging, code review, planning, UI/UX design. Today's one-off task becomes tomorrow's one-click skill. Your team starts at 80%.
+### Shared Conversations
 
-**🧠 Team Brain** — Three layers of memory. What one person learns, Claude knows for everyone. New hire joins? Claude already knows the project.
+Every AI conversation is visible to the team. Who asked what. What AI answered. What decisions were made. Organized by project — your company's AI work at a glance.
 
-**📂 Project Workspaces** — Each project gets its own folder, its own `CLAUDE.md` instructions, its own history. Marketing copy never leaks into API code.
+No more "what did Claude say about that?" — just look.
+
+### One File System, One Memory
+
+One server. One shared file system. One memory that persists across people and time.
+
+What one person teaches AI on Monday, a new hire uses on Friday. Three layers of memory — session, project, and team — so nothing learned is ever lost.
+
+Version control happens automatically. Every change is committed, browsable, and rollbackable. It looks and feels like file management — not Git. **Zero CLI knowledge required.**
+
+### Partitioned by Team
+
+Marketing doesn't see engineering's code. Engineering doesn't see HR's documents. But when they need to collaborate, the walls come down.
+
+Projects, departments, teams, individuals — partition however your organization works. Five permission levels (admin → viewer) with folder-level isolation.
 
 ```
 workspace/
@@ -55,13 +65,47 @@ workspace/
 └── memory/MEMORY.md      ← Shared context across all projects
 ```
 
-**🚀 Publishing Hub** — Turn any AI-generated artifact into a live site or app. One click. Your server. No vendor lock-in.
+---
+
+## Run Any Code. No CLI Needed.
+
+Tower runs on your server. AI doesn't just chat — it executes. Write code, create files, deploy apps, run analyses. The full power of a development environment, accessible through a browser.
+
+Your marketing lead can ask AI to build a landing page. Your ops manager can automate a report. Your intern can run a data analysis. None of them need to know what a terminal is.
+
+---
+
+## Skills Create Skills
+
+When AI works with your whole team — connected to one file system and one shared memory — something compounds.
+
+A one-off task becomes a reusable skill. That skill creates another skill. Your team's AI gets better every day, automatically.
+
+**Example:** Someone creates a quote generator → it spawns a proposal skill → which evolves into a contract skill. Each one built on the last, available to everyone.
+
+20+ skills ship out of the box: brainstorming, debugging, code review, planning, UI/UX design, research, document generation. Your team starts at 80% and climbs from there.
+
+---
+
+## And Also
+
+<p align="center">
+  <img src="capture-board.png" alt="Tower — Agent Board with autonomous task execution" width="720" />
+</p>
+
+**Agent Board** — Create a task. AI executes it. Tasks create tasks. "Plan our product launch" spawns market research, competitor analysis, pricing, and timeline — each running autonomously. Schedule recurring tasks. Your weekly reports write themselves.
 
 <p align="center">
   <img src="capture-publish.png" alt="Tower — Publishing Hub" width="720" />
 </p>
 
-**🔧 Git + Docs + Mobile** — Auto-commit on every edit. Built-in document viewer (HTML, Markdown, PDF). Voice input from your phone — full server compute from anywhere.
+**Publishing Hub** — Turn any AI-generated artifact into a live site or app. One click. Your server. No vendor lock-in.
+
+**Mobile** — Responsive browser UI. Works from your phone with full server compute behind it.
+
+**File Sharing** — Internal team sharing + time-limited external links. No separate file sharing service needed.
+
+**Search Everything** — Files, conversations, tasks, Git history. Full-text search across your entire AI workspace.
 
 ---
 
@@ -89,7 +133,15 @@ See **[INSTALL.md](INSTALL.md)** for details.
 
 ---
 
-> Fair warning: this has bugs. But it works, and we use it every day.
+## Status: Research Alpha
+
+We use this every day in production. It works — and it's not finished.
+
+Some features are still rough around the edges. New capabilities are being designed and shipped continuously. Full workspace partitioning, user sandboxing, and enterprise-grade isolation are coming.
+
+This is an active research project building toward a clear destination: **100% AI-augmented teams.**
+
+Feedback and contributions are welcome — [open an issue](https://github.com/juliuschun/tower/issues) or submit a PR.
 
 ## License
 
