@@ -34,7 +34,7 @@ echo ""
 # ───────────────────────────────────
 # Step 1: Prerequisites
 # ───────────────────────────────────
-step "Step 1/6: Checking prerequisites"
+step "Step 1/7: Checking prerequisites"
 
 # Node.js
 if ! command -v node &>/dev/null; then
@@ -178,7 +178,7 @@ fi
 # ───────────────────────────────────
 # Step 2: npm install
 # ───────────────────────────────────
-step "Step 2/6: Installing dependencies"
+step "Step 2/7: Installing dependencies"
 
 if [ -d "node_modules" ]; then
   info "node_modules exists, running npm install..."
@@ -191,7 +191,7 @@ info "Dependencies installed"
 # ───────────────────────────────────
 # Step 3: Environment file
 # ───────────────────────────────────
-step "Step 3/6: Environment configuration"
+step "Step 3/7: Environment configuration"
 
 if [ -f ".env" ]; then
   info ".env already exists (skipping)"
@@ -244,7 +244,7 @@ fi
 # ───────────────────────────────────
 # Step 4: Workspace directory
 # ───────────────────────────────────
-step "Step 4/6: Workspace setup"
+step "Step 4/7: Workspace setup"
 
 # Determine workspace path from .env or default
 WORKSPACE_DIR="$HOME/workspace"
@@ -653,9 +653,244 @@ CLAUDEEOF
 fi
 
 # ───────────────────────────────────
-# Step 5: Claude Skills
+# Step 5: Publishing Hub (optional)
 # ───────────────────────────────────
-step "Step 5/6: Claude skills & hooks"
+step "Step 5/7: Publishing Hub"
+
+# Only offer if: workspace exists, nginx available, Linux
+if [ -d "$WORKSPACE_DIR" ] && command -v nginx &>/dev/null && [[ "$OSTYPE" == "linux"* ]]; then
+  if [ -f "$WORKSPACE_DIR/published/apps/hub/server.js" ] && systemctl is-active pub-hub.service &>/dev/null; then
+    info "Publishing Hub already installed and running"
+  else
+    echo "  Publishing Hub provides:"
+    echo "    - Web dashboard for managing published apps/sites"
+    echo "    - Auto-generated nginx config + systemd services"
+    echo "    - One-click deploy/stop/restart for apps"
+    echo ""
+    read -p "  Install Publishing Hub? (y/N) " -n 1 -r
+    echo
+
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+      # Copy template files (don't overwrite existing)
+      PUB_DIR="$WORKSPACE_DIR/published"
+      mkdir -p "$PUB_DIR/apps/hub" "$PUB_DIR/sites"
+
+      if [ ! -f "$PUB_DIR/apps/hub/server.js" ]; then
+        cp "$SCRIPT_DIR/templates/workspace/published/apps/hub/server.js" "$PUB_DIR/apps/hub/server.js"
+        info "Hub server.js installed"
+      else
+        info "Hub server.js already exists (keeping)"
+      fi
+
+      if [ ! -f "$PUB_DIR/manifest.json" ]; then
+        # Fresh manifest — fill in dynamic values
+        MANIFEST_TEMPLATE="$SCRIPT_DIR/templates/workspace/published/manifest.json"
+        cp "$MANIFEST_TEMPLATE" "$PUB_DIR/manifest.json"
+        NOW=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+        sed_inplace "s|\"updated_at\": \"\"|\"updated_at\": \"$NOW\"|" "$PUB_DIR/manifest.json"
+        sed_inplace "s|\"working_dir\": \"\"|\"working_dir\": \"$PUB_DIR/apps/hub\"|" "$PUB_DIR/manifest.json"
+        sed_inplace "s|\"created_at\": \"\"|\"created_at\": \"$NOW\"|" "$PUB_DIR/manifest.json"
+        info "manifest.json created"
+      else
+        info "manifest.json already exists (keeping)"
+      fi
+
+      # Domain setup
+      echo ""
+      read -p "  Domain for nginx (e.g. desk.myteam.com, leave blank to skip nginx): " -r HUB_DOMAIN || true
+      echo
+
+      if [ -n "$HUB_DOMAIN" ]; then
+        sed_inplace "s|\"domain\": \"\"|\"domain\": \"$HUB_DOMAIN\"|" "$PUB_DIR/manifest.json"
+
+        # Generate minimal nginx config (Hub + Tower only, Hub will manage the rest)
+        NGINX_CONF="/etc/nginx/sites-available/$HUB_DOMAIN"
+        if [ ! -f "$NGINX_CONF" ]; then
+          sudo tee "$NGINX_CONF" > /dev/null <<NGINXEOF
+# $HUB_DOMAIN — Bootstrap config (Publishing Hub will manage this)
+server {
+    listen 80;
+    server_name $HUB_DOMAIN;
+
+    # Auth subrequest (Tower JWT check)
+    location = /internal/auth {
+        internal;
+        proxy_pass http://localhost:32355/api/auth/check;
+        proxy_pass_request_body off;
+        proxy_set_header Content-Length "";
+        proxy_set_header Authorization \$http_authorization;
+    }
+
+    # Publishing Hub (login required)
+    location /hub/ {
+        auth_request /internal/auth;
+        error_page 401 = @hub_unauthorized;
+        proxy_pass http://127.0.0.1:32400/hub/;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    }
+    location @hub_unauthorized {
+        return 302 /?login=required;
+    }
+
+    # Static Sites
+    location /sites/ {
+        alias $PUB_DIR/sites/;
+        autoindex on;
+        index index.html;
+    }
+
+    # Tower (default)
+    location / {
+        proxy_pass http://localhost:32354;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+NGINXEOF
+          sudo ln -sf "$NGINX_CONF" "/etc/nginx/sites-enabled/$HUB_DOMAIN" 2>/dev/null || true
+          sudo nginx -t && sudo nginx -s reload
+          info "nginx configured for $HUB_DOMAIN"
+        else
+          info "nginx config already exists for $HUB_DOMAIN (keeping)"
+        fi
+      else
+        warn "Skipped nginx setup — Hub accessible only via localhost:32400"
+      fi
+
+      # Install systemd service
+      SVC_NAME="pub-hub.service"
+      if ! systemctl cat "$SVC_NAME" &>/dev/null; then
+        sudo tee "/etc/systemd/system/$SVC_NAME" > /dev/null <<SVCEOF
+[Unit]
+Description=Publishing Hub
+After=network.target
+
+[Service]
+Type=simple
+User=$(whoami)
+WorkingDirectory=$PUB_DIR/apps/hub
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=5
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+        sudo systemctl daemon-reload
+        sudo systemctl enable "$SVC_NAME"
+        sudo systemctl start "$SVC_NAME"
+        info "pub-hub.service installed and started"
+      else
+        info "pub-hub.service already exists"
+        # Ensure it's running
+        if ! systemctl is-active "$SVC_NAME" &>/dev/null; then
+          sudo systemctl start "$SVC_NAME"
+          info "pub-hub.service started"
+        fi
+      fi
+
+      # Wait for Hub to come up, then sync
+      sleep 2
+      if curl -s http://127.0.0.1:32400/hub/api/manifest &>/dev/null; then
+        info "Publishing Hub is running"
+        # Sync: installs remaining services + regenerates nginx from manifest
+        SYNC_RESULT=$(curl -s -X POST http://127.0.0.1:32400/hub/api/sync 2>/dev/null)
+        if echo "$SYNC_RESULT" | grep -q '"ok":true'; then
+          info "Infrastructure synced via Hub API"
+        else
+          warn "Hub sync returned unexpected result — check /hub/ dashboard"
+        fi
+      else
+        warn "Hub not responding on :32400 — check: journalctl -u pub-hub.service"
+      fi
+
+      # Workspace settings.json with PreToolUse hooks (if not exists)
+      WS_SETTINGS="$WORKSPACE_DIR/.claude/settings.json"
+      if [ ! -f "$WS_SETTINGS" ]; then
+        mkdir -p "$WORKSPACE_DIR/.claude"
+        cat > "$WS_SETTINGS" <<'SETTINGSEOF'
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "CMD=\"$CLAUDE_TOOL_INPUT_command\"; if echo \"$CMD\" | grep -qE '(cp|mv|vi|vim|nano|tee).*sites-(available|enabled).*desk.moatai'; then echo '⚠️  nginx config는 Publishing Hub가 자동 관리합니다.' && echo '→ curl -X POST http://127.0.0.1:32400/hub/api/sync' && exit 1; fi; if echo \"$CMD\" | grep -qE 'systemctl.*(start|stop|restart|enable|disable).*pub-'; then if echo \"$CMD\" | grep -q 'pub-hub'; then exit 0; fi; echo '⚠️  pub-* 서비스는 Publishing Hub API로 관리하세요.' && echo '→ curl -X POST http://127.0.0.1:32400/hub/api/apps/{name}/start' && exit 1; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "FILE=\"$CLAUDE_TOOL_INPUT_file_path\"; if echo \"$FILE\" | grep -qE 'sites-(available|enabled)/.*\\.moatai'; then echo '🚫 nginx config는 Publishing Hub가 자동 생성합니다.' && exit 1; fi"
+          }
+        ]
+      }
+    ]
+  }
+}
+SETTINGSEOF
+        info "Workspace hooks installed (.claude/settings.json)"
+      else
+        info "Workspace hooks already exist (keeping)"
+      fi
+
+      echo ""
+      info "Publishing Hub setup complete!"
+      echo "  Dashboard: http://localhost:32400/hub/"
+      if [ -n "$HUB_DOMAIN" ]; then
+        echo "  Public:    https://$HUB_DOMAIN/hub/ (after TLS setup)"
+      fi
+
+    else
+      warn "Skipped Publishing Hub"
+    fi
+  fi
+else
+  if [ ! -d "$WORKSPACE_DIR" ]; then
+    warn "Skipping Publishing Hub — workspace not set up"
+    echo ""
+    echo "  Publishing Hub는 workspace 위에서 동작합니다."
+    echo "  Step 4에서 workspace를 먼저 세팅한 뒤, setup.sh를 다시 실행하세요."
+    echo ""
+  elif ! command -v nginx &>/dev/null; then
+    warn "Skipping Publishing Hub — nginx not installed"
+    echo ""
+    echo "  Publishing Hub는 nginx + systemd 기반으로 앱/사이트를 관리합니다."
+    echo "  설치 후 setup.sh를 다시 실행하면 이 단계가 활성화됩니다:"
+    echo ""
+    echo "    ${BOLD}sudo apt install -y nginx${NC}"
+    echo "    ${BOLD}bash setup.sh${NC}                # 기존 설정은 유지되고 Hub만 추가됩니다"
+    echo ""
+  elif [[ "$OSTYPE" != "linux"* ]]; then
+    warn "Skipping Publishing Hub — Linux (systemd) 환경에서만 지원"
+    echo ""
+    echo "  Publishing Hub는 systemd 서비스 관리 + nginx 자동 설정을 포함합니다."
+    echo "  macOS에서는 수동으로 Hub 서버를 실행할 수 있습니다:"
+    echo ""
+    echo "    ${BOLD}cd ~/workspace/published/apps/hub && node server.js${NC}"
+    echo "    → http://localhost:32400/hub/"
+    echo ""
+  fi
+fi
+
+# ───────────────────────────────────
+# Step 6: Claude Skills
+# ───────────────────────────────────
+step "Step 6/7: Claude skills & hooks"
 
 CLAUDE_DIR="$HOME/.claude"
 
@@ -701,7 +936,7 @@ fi
 # ───────────────────────────────────
 # Step 6: Summary
 # ───────────────────────────────────
-step "Step 6/6: Setup complete!"
+step "Step 7/7: Setup complete!"
 
 echo ""
 echo "  ${BOLD}Quick start:${NC}"
@@ -716,6 +951,10 @@ echo ""
 echo "  ${BOLD}Production:${NC}"
 echo "    npm run build        Build for production"
 echo "    ./start.sh start     Start with PM2"
+echo ""
+echo "  ${BOLD}Publishing Hub:${NC}"
+echo "    http://localhost:32400/hub/    Dashboard"
+echo "    curl -X POST http://127.0.0.1:32400/hub/api/sync"
 echo ""
 echo "  ${BOLD}Optional:${NC}"
 echo "    cloudflared tunnel --url http://localhost:32354"
