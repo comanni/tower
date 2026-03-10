@@ -50,6 +50,7 @@ export function HistoryPanel() {
   const [tasks, setTasks] = useState<ArchivedTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const activeView = useSessionStore((s) => s.activeView);
 
   const loadHistory = useCallback(async () => {
     setLoading(true);
@@ -67,9 +68,10 @@ export function HistoryPanel() {
     }
   }, []);
 
+  // Reload whenever user switches to History view
   useEffect(() => {
-    loadHistory();
-  }, [loadHistory]);
+    if (activeView === 'history') loadHistory();
+  }, [activeView, loadHistory]);
 
   const handleRestoreSession = async (id: string) => {
     try {
