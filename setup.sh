@@ -826,7 +826,7 @@ SVCEOF
         "hooks": [
           {
             "type": "command",
-            "command": "CMD=\"$CLAUDE_TOOL_INPUT_command\"; if echo \"$CMD\" | grep -qE '(cp|mv|vi|vim|nano|tee).*sites-(available|enabled).*desk.moatai'; then echo '⚠️  nginx config는 Publishing Hub가 자동 관리합니다.' && echo '→ curl -X POST http://127.0.0.1:32400/hub/api/sync' && exit 1; fi; if echo \"$CMD\" | grep -qE 'systemctl.*(start|stop|restart|enable|disable).*pub-'; then if echo \"$CMD\" | grep -q 'pub-hub'; then exit 0; fi; echo '⚠️  pub-* 서비스는 Publishing Hub API로 관리하세요.' && echo '→ curl -X POST http://127.0.0.1:32400/hub/api/apps/{name}/start' && exit 1; fi"
+            "command": "CMD=\"$CLAUDE_TOOL_INPUT_command\"; if echo \"$CMD\" | grep -qE '(cp|mv|vi|vim|nano|tee).*sites-(available|enabled)'; then echo '⚠️  nginx config는 Publishing Hub가 자동 관리합니다.' && echo '→ curl -X POST http://127.0.0.1:32400/hub/api/sync' && exit 1; fi; if echo \"$CMD\" | grep -qE 'systemctl.*(start|stop|restart|enable|disable).*pub-'; then if echo \"$CMD\" | grep -q 'pub-hub'; then exit 0; fi; echo '⚠️  pub-* 서비스는 Publishing Hub API로 관리하세요.' && echo '→ curl -X POST http://127.0.0.1:32400/hub/api/apps/{name}/start' && exit 1; fi"
           }
         ]
       },
@@ -835,7 +835,7 @@ SVCEOF
         "hooks": [
           {
             "type": "command",
-            "command": "FILE=\"$CLAUDE_TOOL_INPUT_file_path\"; if echo \"$FILE\" | grep -qE 'sites-(available|enabled)/.*\\.moatai'; then echo '🚫 nginx config는 Publishing Hub가 자동 생성합니다.' && exit 1; fi"
+            "command": "FILE=\"$CLAUDE_TOOL_INPUT_file_path\"; if echo \"$FILE\" | grep -qE 'sites-(available|enabled)/'; then echo '🚫 nginx config는 Publishing Hub가 자동 생성합니다.' && exit 1; fi"
           }
         ]
       }

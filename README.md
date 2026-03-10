@@ -120,7 +120,7 @@ A one-off task becomes a reusable skill. That skill creates another skill. Your 
 ## Get Started
 
 ```bash
-git clone https://github.com/juliuschun/tower.git
+git clone https://github.com/your-org/tower.git
 cd tower
 bash setup.sh    # installs everything, asks you a few questions
 npm run dev      # → http://localhost:32354
@@ -149,7 +149,7 @@ Some features are still rough around the edges. New capabilities are being desig
 
 This is an active research project building toward a clear destination: **100% AI-augmented teams.**
 
-Feedback and contributions are welcome — [open an issue](https://github.com/juliuschun/tower/issues) or submit a PR.
+Feedback and contributions are welcome — [open an issue](https://github.com/your-org/tower/issues) or submit a PR.
 
 ## License
 

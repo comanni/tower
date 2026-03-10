@@ -19,16 +19,16 @@ Produces a standalone markdown report at `~/.claude/memory/reviews/{date}_{time}
 
 ```bash
 # Add the marketplace first (one-time)
-claude plugin marketplace add juliuschun/claude-marketplace
+claude plugin marketplace add tower-project/claude-marketplace
 
 # Install this plugin
-claude plugin install review-global@julius-marketplace
+claude plugin install review-global@tower-marketplace
 ```
 
 ### Standalone (manual)
 
 ```bash
-git clone https://github.com/juliuschun/skills-review.git ~/.claude/skills/review-global
+git clone https://github.com/tower-project/skills-review.git ~/.claude/skills/review-global
 ```
 
 ## Usage

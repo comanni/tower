@@ -41,7 +41,13 @@ def parse_args():
 
 def friendly_project_name(dirname):
     """Convert directory encoding to readable project name."""
-    name = dirname.replace("-Users-julius-Documents-", "")
+    # Strip home directory prefix (encoded as path with hyphens)
+    home = os.path.expanduser("~").replace("/", "-").lstrip("-")
+    name = dirname
+    if name.startswith(f"-{home}-"):
+        name = name[len(f"-{home}-"):]
+    elif name.startswith(home):
+        name = name[len(home):].lstrip("-")
     # Tag client projects
     if name.startswith("01-Clients-"):
         name = "CLIENT:" + name.replace("01-Clients-", "")

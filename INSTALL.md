@@ -17,7 +17,7 @@
 ## Quick Start (3 commands)
 
 ```bash
-git clone https://github.com/juliuschun/tower.git
+git clone https://github.com/your-org/tower.git
 cd tower
 bash setup.sh
 ```
@@ -108,7 +108,7 @@ This copies the OAuth tokens from a machine where Claude is already authenticate
 ### 4. Clone & Install
 
 ```bash
-git clone https://github.com/juliuschun/tower.git
+git clone https://github.com/your-org/tower.git
 cd tower
 npm install
 ```
