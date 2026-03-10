@@ -14,6 +14,10 @@ Every conversation with AI, shared by the whole team like a Google Doc. One file
 
 *In production. $20K revenue in first 2 weeks.*
 
+<p align="center">
+  <img src="diagram-tower.png" alt="Tower — team members contribute, knowledge compounds, everyone benefits" width="560" />
+</p>
+
 ---
 
 ## The Problem: AI Is Personal. Work Is Not.
@@ -68,6 +72,10 @@ workspace/
 ---
 
 ## Run Any Code. No CLI Needed.
+
+<p align="center">
+  <img src="diagram-access.png" alt="Tower — messages from any device become real work" width="640" />
+</p>
 
 Tower runs on your server. AI doesn't just chat — it executes. Write code, create files, deploy apps, run analyses. The full power of a development environment, accessible through a browser.
 
