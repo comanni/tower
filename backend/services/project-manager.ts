@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { getAccessibleProjectIds } from './group-manager.js';
 
 const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT || path.join(process.env.HOME || '/tmp', 'workspace');
 
@@ -38,8 +39,21 @@ function rowToProject(row: any): Project {
   };
 }
 
-export function getProjects(userId?: number): Project[] {
+export function getProjects(userId?: number, role?: string): Project[] {
   const db = getDb();
+
+  // Group 필터가 활성화되면: group이 가시성을 결정 (기존 user_id 조건 대체)
+  if (userId && role) {
+    const accessibleIds = getAccessibleProjectIds(userId, role);
+    if (accessibleIds !== null) {
+      const allRows = db.prepare(
+        `SELECT * FROM projects WHERE archived = 0 ORDER BY sort_order, created_at`
+      ).all() as any[];
+      return allRows.filter(r => accessibleIds.includes(r.id)).map(rowToProject);
+    }
+  }
+
+  // Group 없음 (기존 동작): 본인 것 + 전체 공개(user_id IS NULL)
   const rows = db.prepare(
     `SELECT * FROM projects WHERE archived = 0 AND (user_id IS NULL OR user_id = ?) ORDER BY sort_order, created_at`
   ).all(userId ?? null) as any[];

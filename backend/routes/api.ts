@@ -2,7 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import path from 'path';
 import {
-  authenticateUser, createUser, hasUsers, generateToken, verifyToken, authMiddleware,
+  authenticateUser, createUser, hasUsers, generateToken, verifyToken, authMiddleware, extractToken,
   adminMiddleware, listUsers, updateUserRole, updateUserPath,
   resetUserPassword, disableUser, getUserAllowedPath,
 } from '../services/auth.js';
@@ -42,6 +42,12 @@ import {
   getProjects, getProject, createProject, updateProject, deleteProject,
   moveSessionToProject, reorderProjects,
 } from '../services/project-manager.js';
+import {
+  listGroups, createGroup, updateGroup, deleteGroup,
+  addUserToGroup, removeUserFromGroup,
+  addProjectToGroup, removeProjectFromGroup,
+  getUserGroups,
+} from '../services/group-manager.js';
 
 const UPLOAD_MAX_SIZE = parseInt(process.env.UPLOAD_MAX_SIZE || '') || 50 * 1024 * 1024; // 50MB
 const DANGEROUS_EXTENSIONS = new Set([
@@ -67,15 +73,25 @@ router.get('/auth/status', (_req, res) => {
 });
 
 // nginx auth_request subrequest endpoint — returns 200 if valid token, 401 otherwise
+// Checks: Authorization header → query param → cookie "tower_token" → 401
 router.get('/auth/check', (req, res) => {
   if (!config.authEnabled) return res.sendStatus(200);
-  const authHeader = req.headers.authorization;
-  const rawToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  const rawToken = extractToken(req);
   if (!rawToken) return res.sendStatus(401);
   const payload = verifyToken(rawToken);
   if (!payload) return res.sendStatus(401);
   res.sendStatus(200);
 });
+
+// Helper: set tower_token cookie alongside JSON response
+function setTokenCookie(res: any, token: string) {
+  res.cookie('tower_token', token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  });
+}
 
 router.post('/auth/setup', (req, res) => {
   if (hasUsers()) return res.status(400).json({ error: 'Admin already exists' });
@@ -84,6 +100,7 @@ router.post('/auth/setup', (req, res) => {
   if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
   const user = createUser(username, password, 'admin');
   const token = generateToken({ userId: user.id, username: user.username, role: user.role });
+  setTokenCookie(res, token);
   res.json({ token, user: { id: user.id, username: user.username, role: user.role } });
 });
 
@@ -92,6 +109,7 @@ router.post('/auth/login', (req, res) => {
   const payload = authenticateUser(username, password);
   if (!payload) return res.status(401).json({ error: 'Invalid credentials' });
   const token = generateToken(payload);
+  setTokenCookie(res, token);
   res.json({ token, user: payload });
 });
 
@@ -364,10 +382,76 @@ router.delete('/admin/users/:id', adminMiddleware, (req, res) => {
   res.json({ ok: true });
 });
 
+// ───── Admin: Groups ─────
+router.get('/admin/groups', adminMiddleware, (_req, res) => {
+  res.json(listGroups());
+});
+
+router.post('/admin/groups', adminMiddleware, (req, res) => {
+  try {
+    const { name, description, isGlobal } = req.body;
+    if (!name?.trim()) return res.status(400).json({ error: 'name required' });
+    const group = createGroup(name.trim(), description, isGlobal);
+    res.json(group);
+  } catch (err: any) {
+    if (err.message?.includes('UNIQUE')) return res.status(409).json({ error: 'Group name already exists' });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch('/admin/groups/:id', adminMiddleware, (req, res) => {
+  try {
+    const groupId = parseInt(req.params.id);
+    const group = updateGroup(groupId, req.body);
+    if (!group) return res.status(404).json({ error: 'Group not found' });
+    res.json(group);
+  } catch (err: any) {
+    if (err.message?.includes('UNIQUE')) return res.status(409).json({ error: 'Group name already exists' });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/admin/groups/:id', adminMiddleware, (req, res) => {
+  const ok = deleteGroup(parseInt(req.params.id));
+  if (!ok) return res.status(404).json({ error: 'Group not found' });
+  res.json({ ok: true });
+});
+
+router.post('/admin/groups/:id/users', adminMiddleware, (req, res) => {
+  const groupId = parseInt(req.params.id);
+  const { userId } = req.body;
+  if (!userId) return res.status(400).json({ error: 'userId required' });
+  addUserToGroup(userId, groupId);
+  res.json({ ok: true });
+});
+
+router.delete('/admin/groups/:id/users/:uid', adminMiddleware, (req, res) => {
+  const groupId = parseInt(req.params.id);
+  const userId = parseInt(req.params.uid);
+  removeUserFromGroup(userId, groupId);
+  res.json({ ok: true });
+});
+
+router.post('/admin/groups/:id/projects', adminMiddleware, (req, res) => {
+  const groupId = parseInt(req.params.id);
+  const { projectId } = req.body;
+  if (!projectId) return res.status(400).json({ error: 'projectId required' });
+  addProjectToGroup(projectId, groupId);
+  res.json({ ok: true });
+});
+
+router.delete('/admin/groups/:id/projects/:pid', adminMiddleware, (req, res) => {
+  const groupId = parseInt(req.params.id);
+  const projectId = req.params.pid;
+  removeProjectFromGroup(projectId, groupId);
+  res.json({ ok: true });
+});
+
 // ───── Sessions ─────
 router.get('/sessions', (req, res) => {
   const userId = (req as any).user?.userId;
-  res.json(getSessions(userId));
+  const role = (req as any).user?.role;
+  res.json(getSessions(userId, role));
 });
 
 router.post('/sessions', (req, res) => {
@@ -476,7 +560,8 @@ router.get('/search', (req, res) => {
   }
   const userId = (req as any).user?.userId;
   const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
-  const results = search(q, { userId, limit });
+  const role = (req as any).user?.role;
+  const results = search(q, { userId, role, limit });
   res.json(results);
 });
 
@@ -900,18 +985,30 @@ router.get('/commands', (_req, res) => {
   res.json(loadCommands());
 });
 
+// ───── My Groups (for non-admin users) ─────
+router.get('/my/groups', (req, res) => {
+  const userId = (req as any).user?.userId;
+  if (!userId) return res.json([]);
+  res.json(getUserGroups(userId));
+});
+
 // ───── Projects ─────
 router.get('/projects', (req, res) => {
   const userId = (req as any).user?.userId;
-  res.json(getProjects(userId));
+  const role = (req as any).user?.role;
+  res.json(getProjects(userId, role));
 });
 
 router.post('/projects', (req, res) => {
   try {
-    const { name, description, rootPath, color } = req.body;
+    const { name, description, rootPath, color, groupId } = req.body;
     if (!name?.trim()) return res.status(400).json({ error: 'name required' });
     const userId = (req as any).user?.userId;
     const project = createProject(name.trim(), userId, { description, rootPath, color });
+    // Auto-assign to group if specified
+    if (groupId && project) {
+      addProjectToGroup(project.id, groupId);
+    }
     res.json(project);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -965,7 +1062,7 @@ router.post('/sessions/:id/move', (req, res) => {
 // ───── Kanban Tasks ─────
 router.get('/tasks', (req, res) => {
   try {
-    const tasks = getTasks((req as any).user?.id);
+    const tasks = getTasks((req as any).user?.userId, (req as any).user?.role);
     res.json(tasks);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -974,7 +1071,7 @@ router.get('/tasks', (req, res) => {
 
 router.get('/tasks/meta', (req, res) => {
   try {
-    const cwds = getDistinctCwds((req as any).user?.id);
+    const cwds = getDistinctCwds((req as any).user?.userId);
     res.json({ cwds });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -983,12 +1080,12 @@ router.get('/tasks/meta', (req, res) => {
 
 router.post('/tasks', (req, res) => {
   try {
-    const { title, description, cwd, model, scheduledAt, scheduleCron, scheduleEnabled, workflow, parentTaskId } = req.body;
+    const { title, description, cwd, model, scheduledAt, scheduleCron, scheduleEnabled, workflow, parentTaskId, projectId } = req.body;
     if (!title || !cwd) return res.status(400).json({ error: 'title and cwd required' });
     const schedule = (scheduledAt || scheduleCron || scheduleEnabled)
       ? { scheduledAt, scheduleCron, scheduleEnabled }
       : undefined;
-    const task = createTask(title, description || '', cwd, (req as any).user?.id, model, schedule, workflow, parentTaskId);
+    const task = createTask(title, description || '', cwd, (req as any).user?.userId, model, schedule, workflow, parentTaskId, projectId);
     // Broadcast to all connected clients so kanban boards update in real-time
     broadcast({ type: 'task_created', task });
     res.json(task);

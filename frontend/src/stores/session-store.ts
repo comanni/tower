@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { dedupeSessionsById, addSessionIfNew } from '../utils/session-filters';
 
 export interface SessionMeta {
   id: string;
@@ -69,19 +70,13 @@ export const useSessionStore = create<SessionState>((set) => ({
   activeView: 'chat',
 
   setSessions: (sessions) => {
-    // Dedupe by id — keep the first occurrence (which is usually the freshest)
-    const seen = new Set<string>();
-    const deduped = sessions.filter((s) => {
-      if (seen.has(s.id)) return false;
-      seen.add(s.id);
-      return true;
-    });
-    set({ sessions: deduped });
+    set({ sessions: dedupeSessionsById(sessions) });
   },
   setActiveSessionId: (id) => set({ activeSessionId: id }),
   addSession: (session) => set((s) => {
-    if (s.sessions.some((ss) => ss.id === session.id)) return s; // dedupe
-    return { sessions: [session, ...s.sessions] };
+    const updated = addSessionIfNew(s.sessions, session);
+    if (updated === s.sessions) return s; // no change — skip rerender
+    return { sessions: updated };
   }),
   removeSession: (id) => set((s) => ({ sessions: s.sessions.filter((ss) => ss.id !== id) })),
   updateSessionMeta: (id, updates) =>

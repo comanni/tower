@@ -1,5 +1,6 @@
 import { getDb } from '../db/schema.js';
 import { v4 as uuidv4 } from 'uuid';
+import { getAccessibleProjectIds } from './group-manager.js';
 
 export type WorkflowMode = 'auto' | 'simple' | 'default' | 'feature' | 'big_task';
 
@@ -23,6 +24,7 @@ export interface TaskMeta {
   workflow: WorkflowMode;
   parentTaskId: string | null;
   worktreePath: string | null;
+  projectId: string | null;
 }
 
 export interface ScheduleCron {
@@ -54,6 +56,7 @@ function mapRow(row: any): TaskMeta {
     workflow: (row.workflow as WorkflowMode) || 'auto',
     parentTaskId: row.parent_task_id || null,
     worktreePath: row.worktree_path || null,
+    projectId: row.project_id || null,
   };
 }
 
@@ -66,6 +69,7 @@ export function createTask(
   schedule?: { scheduledAt?: string | null; scheduleCron?: string | null; scheduleEnabled?: boolean },
   workflow?: WorkflowMode,
   parentTaskId?: string,
+  projectId?: string,
 ): TaskMeta {
   const db = getDb();
   const id = uuidv4();
@@ -74,8 +78,8 @@ export function createTask(
   const resolvedModel = model || 'claude-opus-4-6';
 
   db.prepare(`
-    INSERT INTO tasks (id, title, description, cwd, model, status, sort_order, user_id, scheduled_at, schedule_cron, schedule_enabled, workflow, parent_task_id)
-    VALUES (?, ?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO tasks (id, title, description, cwd, model, status, sort_order, user_id, scheduled_at, schedule_cron, schedule_enabled, workflow, parent_task_id, project_id)
+    VALUES (?, ?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id, title, description, cwd, resolvedModel, sortOrder, userId ?? null,
     schedule?.scheduledAt ?? null,
@@ -83,16 +87,31 @@ export function createTask(
     schedule?.scheduleEnabled ? 1 : 0,
     workflow || 'auto',
     parentTaskId ?? null,
+    projectId ?? null,
   );
 
   return getTask(id)!;
 }
 
-export function getTasks(userId?: number): TaskMeta[] {
+export function getTasks(userId?: number, role?: string): TaskMeta[] {
   const db = getDb();
-  const rows = userId
-    ? db.prepare('SELECT * FROM tasks WHERE user_id = ? AND (archived IS NULL OR archived = 0) ORDER BY status, sort_order').all(userId)
-    : db.prepare('SELECT * FROM tasks WHERE (archived IS NULL OR archived = 0) ORDER BY status, sort_order').all();
+  const rows = db.prepare('SELECT * FROM tasks WHERE (archived IS NULL OR archived = 0) ORDER BY status, sort_order').all() as any[];
+
+  if (userId && role) {
+    const accessibleIds = getAccessibleProjectIds(userId, role);
+    if (accessibleIds !== null) {
+      // Same pattern as sessions: project tasks visible by group, non-project tasks by creator
+      return rows.filter(r => {
+        if (!r.project_id) return r.user_id === userId;
+        return accessibleIds.includes(r.project_id);
+      }).map(mapRow);
+    }
+  }
+
+  // No group filtering (admin or no groups exist): filter by user_id only
+  if (userId) {
+    return rows.filter(r => r.user_id === userId || r.user_id === null).map(mapRow);
+  }
   return rows.map(mapRow);
 }
 
@@ -102,7 +121,7 @@ export function getTask(id: string): TaskMeta | null {
   return row ? mapRow(row) : null;
 }
 
-export function updateTask(id: string, updates: Partial<Pick<TaskMeta, 'title' | 'description' | 'cwd' | 'model' | 'status' | 'sessionId' | 'sortOrder' | 'progressSummary' | 'completedAt' | 'scheduledAt' | 'scheduleCron' | 'scheduleEnabled' | 'workflow' | 'parentTaskId' | 'worktreePath'>>): TaskMeta | null {
+export function updateTask(id: string, updates: Partial<Pick<TaskMeta, 'title' | 'description' | 'cwd' | 'model' | 'status' | 'sessionId' | 'sortOrder' | 'progressSummary' | 'completedAt' | 'scheduledAt' | 'scheduleCron' | 'scheduleEnabled' | 'workflow' | 'parentTaskId' | 'worktreePath' | 'projectId'>>): TaskMeta | null {
   const db = getDb();
   const fields: string[] = [];
   const values: any[] = [];
@@ -122,6 +141,7 @@ export function updateTask(id: string, updates: Partial<Pick<TaskMeta, 'title' |
   if (updates.workflow !== undefined) { fields.push('workflow = ?'); values.push(updates.workflow); }
   if (updates.parentTaskId !== undefined) { fields.push('parent_task_id = ?'); values.push(updates.parentTaskId); }
   if (updates.worktreePath !== undefined) { fields.push('worktree_path = ?'); values.push(updates.worktreePath); }
+  if (updates.projectId !== undefined) { fields.push('project_id = ?'); values.push(updates.projectId); }
 
   if (fields.length === 0) return getTask(id);
 

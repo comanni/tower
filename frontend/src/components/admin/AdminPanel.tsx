@@ -9,6 +9,7 @@ interface User {
   username: string;
   role: string;
   allowed_path: string;
+  password_plain: string;
   created_at: string;
 }
 
@@ -19,7 +20,7 @@ interface AdminPanelProps {
 }
 
 export function AdminPanel({ open, onClose, token }: AdminPanelProps) {
-  const [tab, setTab] = useState<'users' | 'prompts' | 'system'>('users');
+  const [tab, setTab] = useState<'users' | 'groups' | 'prompts' | 'system'>('users');
 
   if (!open) return null;
 
@@ -54,7 +55,8 @@ export function AdminPanel({ open, onClose, token }: AdminPanelProps) {
 
         {/* Tabs */}
         <div className="flex border-b border-surface-800 px-6 shrink-0">
-          <button className={tabClass('users')} onClick={() => setTab('users')}>User Management</button>
+          <button className={tabClass('users')} onClick={() => setTab('users')}>Users</button>
+          <button className={tabClass('groups')} onClick={() => setTab('groups')}>Groups</button>
           <button className={tabClass('prompts')} onClick={() => setTab('prompts')}>System Prompt</button>
           <button className={tabClass('system')} onClick={() => setTab('system')}>System</button>
         </div>
@@ -62,6 +64,7 @@ export function AdminPanel({ open, onClose, token }: AdminPanelProps) {
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
           {tab === 'users' && <UserManagement token={token} />}
+          {tab === 'groups' && <GroupManagement token={token} />}
           {tab === 'prompts' && <SystemPromptEditor token={token} />}
           {tab === 'system' && <SystemInfo />}
         </div>
@@ -72,8 +75,16 @@ export function AdminPanel({ open, onClose, token }: AdminPanelProps) {
 
 // ───── Users Tab ─────
 
+interface SimpleGroup {
+  id: number;
+  name: string;
+  isGlobal: boolean;
+  members: { id: number }[];
+}
+
 function UserManagement({ token }: { token?: string | null }) {
   const [users, setUsers] = useState<User[]>([]);
+  const [groups, setGroups] = useState<SimpleGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [newUser, setNewUser] = useState({ username: '', password: '', passwordConfirm: '', role: 'member', allowed_path: '' });
@@ -91,12 +102,37 @@ function UserManagement({ token }: { token?: string | null }) {
 
   const fetchUsers = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/admin/users`, { headers: headers() });
-      if (res.ok) setUsers(await res.json());
+      const [usersRes, groupsRes] = await Promise.all([
+        fetch(`${API_BASE}/admin/users`, { headers: headers() }),
+        fetch(`${API_BASE}/admin/groups`, { headers: headers() }),
+      ]);
+      if (usersRes.ok) setUsers(await usersRes.json());
+      if (groupsRes.ok) setGroups(await groupsRes.json());
     } catch {} finally { setLoading(false); }
   }, [headers]);
 
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
+
+  const getUserGroups = (userId: number) =>
+    groups.filter(g => g.members.some(m => m.id === userId));
+
+  const getAvailableGroups = (userId: number) =>
+    groups.filter(g => !g.members.some(m => m.id === userId));
+
+  const handleAddToGroup = async (userId: number, groupId: number) => {
+    await fetch(`${API_BASE}/admin/groups/${groupId}/users`, {
+      method: 'POST', headers: headers(),
+      body: JSON.stringify({ userId }),
+    });
+    fetchUsers();
+  };
+
+  const handleRemoveFromGroup = async (userId: number, groupId: number) => {
+    await fetch(`${API_BASE}/admin/groups/${groupId}/users/${userId}`, {
+      method: 'DELETE', headers: headers(),
+    });
+    fetchUsers();
+  };
 
   const currentUsername = (() => {
     try {
@@ -209,23 +245,25 @@ function UserManagement({ token }: { token?: string | null }) {
             <div>
               <label className="block text-[11px] text-gray-500 mb-1">Password</label>
               <input
-                type="password"
+                type="text"
                 value={newUser.password}
                 onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                className="w-full bg-surface-900 border border-surface-700 rounded-md px-3 py-2 text-[13px] text-gray-200 focus:outline-none focus:border-primary-500/50"
+                className="w-full bg-surface-900 border border-surface-700 rounded-md px-3 py-2 text-[13px] text-gray-200 font-mono focus:outline-none focus:border-primary-500/50"
                 placeholder="password (min 8 chars)"
+                autoComplete="off"
               />
             </div>
             <div>
               <label className="block text-[11px] text-gray-500 mb-1">Confirm Password</label>
               <input
-                type="password"
+                type="text"
                 value={newUser.passwordConfirm}
                 onChange={(e) => setNewUser({ ...newUser, passwordConfirm: e.target.value })}
-                className={`w-full bg-surface-900 border rounded-md px-3 py-2 text-[13px] text-gray-200 focus:outline-none focus:border-primary-500/50 ${
+                className={`w-full bg-surface-900 border rounded-md px-3 py-2 text-[13px] text-gray-200 font-mono focus:outline-none focus:border-primary-500/50 ${
                   newUser.passwordConfirm && newUser.password !== newUser.passwordConfirm ? 'border-red-500/50' : 'border-surface-700'
                 }`}
                 placeholder="confirm password"
+                autoComplete="off"
               />
             </div>
             <div>
@@ -275,7 +313,9 @@ function UserManagement({ token }: { token?: string | null }) {
           <thead>
             <tr className="bg-surface-800/60 text-[11px] text-gray-500 uppercase tracking-wider">
               <th className="text-left px-4 py-2.5 font-semibold">Name</th>
+              <th className="text-left px-4 py-2.5 font-semibold">Password</th>
               <th className="text-left px-4 py-2.5 font-semibold">Role</th>
+              <th className="text-left px-4 py-2.5 font-semibold">Groups</th>
               <th className="text-left px-4 py-2.5 font-semibold">Work Directory</th>
               <th className="text-right px-4 py-2.5 font-semibold w-24">Actions</th>
             </tr>
@@ -304,6 +344,11 @@ function UserManagement({ token }: { token?: string | null }) {
                     </div>
                   </td>
 
+                  {/* Password */}
+                  <td className="px-4 py-3">
+                    <PasswordCell password={u.password_plain} userId={u.id} token={token} onUpdate={fetchUsers} />
+                  </td>
+
                   {/* Role */}
                   <td className="px-4 py-3">
                     <select
@@ -317,6 +362,31 @@ function UserManagement({ token }: { token?: string | null }) {
                       <option value="operator">operator</option>
                       <option value="admin">admin</option>
                     </select>
+                  </td>
+
+                  {/* Groups */}
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap items-center gap-1">
+                      {getUserGroups(u.id).map(g => (
+                        <span key={g.id} className="inline-flex items-center gap-0.5 text-[10px] bg-primary-600/15 text-primary-300 px-1.5 py-0.5 rounded border border-primary-500/20">
+                          {g.name}{g.isGlobal ? ' *' : ''}
+                          <button onClick={() => handleRemoveFromGroup(u.id, g.id)} className="text-primary-500/50 hover:text-red-400 ml-0.5">
+                            <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                          </button>
+                        </span>
+                      ))}
+                      {getAvailableGroups(u.id).length > 0 && (
+                        <select
+                          className="bg-transparent border border-surface-700 text-gray-500 rounded px-1 py-0.5 text-[10px] cursor-pointer hover:border-primary-500/40"
+                          value=""
+                          onChange={(e) => { if (e.target.value) handleAddToGroup(u.id, parseInt(e.target.value)); }}
+                        >
+                          <option value="">+</option>
+                          {getAvailableGroups(u.id).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                        </select>
+                      )}
+                      {groups.length === 0 && <span className="text-[10px] text-gray-600">—</span>}
+                    </div>
                   </td>
 
                   {/* Path */}
@@ -388,6 +458,88 @@ function UserManagement({ token }: { token?: string | null }) {
   );
 }
 
+function PasswordCell({ password, userId, token, onUpdate }: { password: string; userId: number; token?: string | null; onUpdate: () => void }) {
+  const [visible, setVisible] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [error, setError] = useState('');
+
+  const handleSave = async () => {
+    if (!draft) return;
+    if (draft.length < 8) { setError('Min 8 chars'); return; }
+    const h: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) h['Authorization'] = `Bearer ${token}`;
+    const res = await fetch(`${API_BASE}/admin/users/${userId}/password`, {
+      method: 'PATCH', headers: h, body: JSON.stringify({ password: draft }),
+    });
+    if (res.ok) {
+      setEditing(false); setDraft(''); setError('');
+      onUpdate();
+    } else {
+      const data = await res.json();
+      setError(data.error || 'Failed');
+    }
+  };
+
+  if (editing) {
+    return (
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-1">
+          <input
+            type="text"
+            value={draft}
+            onChange={(e) => { setDraft(e.target.value); setError(''); }}
+            placeholder="New password"
+            className="w-28 bg-surface-900 border border-surface-700 rounded-md px-2 py-1 text-[12px] text-gray-200 font-mono focus:outline-none focus:border-primary-500/50"
+            autoFocus
+            onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+          />
+          <button onClick={handleSave} className="p-0.5 text-primary-400 hover:text-primary-300" title="Save">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+          </button>
+          <button onClick={() => { setEditing(false); setDraft(''); setError(''); }} className="p-0.5 text-gray-500 hover:text-gray-300" title="Cancel">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+        {error && <span className="text-[10px] text-red-400">{error}</span>}
+      </div>
+    );
+  }
+
+  if (!password) {
+    return (
+      <button onClick={() => setEditing(true)} className="text-[11px] text-gray-600 hover:text-primary-400 italic transition-colors" title="Set password">
+        set password
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1">
+      <span className="text-[12px] font-mono text-gray-400">{visible ? password : '••••••••'}</span>
+      <button
+        onClick={() => setVisible(!visible)}
+        className="p-0.5 text-gray-600 hover:text-gray-400 transition-colors"
+        title={visible ? 'Hide' : 'Show'}
+      >
+        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          {visible
+            ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" />
+            : <><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></>
+          }
+        </svg>
+      </button>
+      <button
+        onClick={() => { setDraft(password); setEditing(true); }}
+        className="p-0.5 text-gray-600 hover:text-yellow-400 transition-colors"
+        title="Change password"
+      >
+        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+      </button>
+    </div>
+  );
+}
+
 function PathEditor({ value, onSave }: { value: string; onSave: (v: string) => void }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -417,6 +569,285 @@ function PathEditor({ value, onSave }: { value: string; onSave: (v: string) => v
     >
       {value ? value.replace(/^\/home\/[^/]+/, '~') : '(all)'}
     </button>
+  );
+}
+
+// ───── Groups Tab ─────
+
+interface GroupData {
+  id: number;
+  name: string;
+  description: string | null;
+  isGlobal: boolean;
+  members: { id: number; username: string }[];
+  projects: { id: string; name: string }[];
+}
+
+function GroupManagement({ token }: { token?: string | null }) {
+  const [groups, setGroups] = useState<GroupData[]>([]);
+  const [allUsers, setAllUsers] = useState<{ id: number; username: string }[]>([]);
+  const [allProjects, setAllProjects] = useState<{ id: string; name: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [newGroup, setNewGroup] = useState({ name: '', description: '', isGlobal: false });
+  const [error, setError] = useState('');
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  const headers = useCallback((): Record<string, string> => {
+    const h: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) h['Authorization'] = `Bearer ${token}`;
+    return h;
+  }, [token]);
+
+  const fetchGroups = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/admin/groups`, { headers: headers() });
+      if (res.ok) setGroups(await res.json());
+    } catch {} finally { setLoading(false); }
+  }, [headers]);
+
+  const fetchMeta = useCallback(async () => {
+    try {
+      const [usersRes, projectsRes] = await Promise.all([
+        fetch(`${API_BASE}/admin/users`, { headers: headers() }),
+        fetch(`${API_BASE}/projects`, { headers: headers() }),
+      ]);
+      if (usersRes.ok) setAllUsers((await usersRes.json()).map((u: any) => ({ id: u.id, username: u.username })));
+      if (projectsRes.ok) setAllProjects((await projectsRes.json()).map((p: any) => ({ id: p.id, name: p.name })));
+    } catch {}
+  }, [headers]);
+
+  useEffect(() => { fetchGroups(); fetchMeta(); }, [fetchGroups, fetchMeta]);
+
+  const handleCreate = async () => {
+    setError('');
+    if (!newGroup.name.trim()) { setError('Group name is required'); return; }
+    try {
+      const res = await fetch(`${API_BASE}/admin/groups`, {
+        method: 'POST', headers: headers(),
+        body: JSON.stringify(newGroup),
+      });
+      if (res.ok) {
+        setShowForm(false);
+        setNewGroup({ name: '', description: '', isGlobal: false });
+        fetchGroups();
+      } else {
+        const data = await res.json();
+        setError(data.error || 'Creation failed');
+      }
+    } catch { setError('Server error'); }
+  };
+
+  const handleDelete = async (id: number, name: string) => {
+    if (!window.confirm(`Delete group "${name}"? Members and projects will be unlinked.`)) return;
+    await fetch(`${API_BASE}/admin/groups/${id}`, { method: 'DELETE', headers: headers() });
+    fetchGroups();
+  };
+
+  const handleAddUser = async (groupId: number, userId: number) => {
+    await fetch(`${API_BASE}/admin/groups/${groupId}/users`, {
+      method: 'POST', headers: headers(),
+      body: JSON.stringify({ userId }),
+    });
+    fetchGroups();
+  };
+
+  const handleRemoveUser = async (groupId: number, userId: number) => {
+    await fetch(`${API_BASE}/admin/groups/${groupId}/users/${userId}`, {
+      method: 'DELETE', headers: headers(),
+    });
+    fetchGroups();
+  };
+
+  const handleAddProject = async (groupId: number, projectId: string) => {
+    await fetch(`${API_BASE}/admin/groups/${groupId}/projects`, {
+      method: 'POST', headers: headers(),
+      body: JSON.stringify({ projectId }),
+    });
+    fetchGroups();
+  };
+
+  const handleRemoveProject = async (groupId: number, projectId: string) => {
+    await fetch(`${API_BASE}/admin/groups/${groupId}/projects/${projectId}`, {
+      method: 'DELETE', headers: headers(),
+    });
+    fetchGroups();
+  };
+
+  if (loading) return <div className="text-sm text-gray-500 py-8 text-center">Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <p className="text-[13px] text-gray-400">
+          <span className="text-gray-200 font-semibold">{groups.length}</span> groups
+          {groups.length === 0 && <span className="text-gray-600 ml-2">— no groups means all projects are visible to everyone</span>}
+        </p>
+        <button
+          onClick={() => setShowForm(!showForm)}
+          className="text-[12px] px-3 py-1.5 rounded-lg bg-primary-600/20 border border-primary-500/30 text-primary-300 hover:bg-primary-600/30 transition-colors font-medium"
+        >
+          {showForm ? 'Cancel' : '+ New Group'}
+        </button>
+      </div>
+
+      {/* Create form */}
+      {showForm && (
+        <div className="p-4 bg-surface-800/40 rounded-lg border border-surface-700 space-y-3">
+          {error && <div className="text-[12px] text-red-400 bg-red-500/10 border border-red-500/20 rounded-md px-3 py-2">{error}</div>}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[11px] text-gray-500 mb-1">Name</label>
+              <input
+                type="text"
+                value={newGroup.name}
+                onChange={(e) => setNewGroup({ ...newGroup, name: e.target.value })}
+                className="w-full bg-surface-900 border border-surface-700 rounded-md px-3 py-2 text-[13px] text-gray-200 focus:outline-none focus:border-primary-500/50"
+                placeholder="e.g. Marketing"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] text-gray-500 mb-1">Description</label>
+              <input
+                type="text"
+                value={newGroup.description}
+                onChange={(e) => setNewGroup({ ...newGroup, description: e.target.value })}
+                className="w-full bg-surface-900 border border-surface-700 rounded-md px-3 py-2 text-[13px] text-gray-200 focus:outline-none focus:border-primary-500/50"
+                placeholder="optional"
+              />
+            </div>
+          </div>
+          <label className="flex items-center gap-2 text-[12px] text-gray-400 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={newGroup.isGlobal}
+              onChange={(e) => setNewGroup({ ...newGroup, isGlobal: e.target.checked })}
+              className="rounded border-surface-600"
+            />
+            Global access (members see all projects, like an executive team)
+          </label>
+          <div className="flex justify-end gap-2 pt-1">
+            <button onClick={() => { setShowForm(false); setError(''); }} className="px-4 py-2 text-[12px] text-gray-400 hover:text-gray-200 transition-colors rounded-md">Cancel</button>
+            <button onClick={handleCreate} className="px-4 py-2 text-[12px] bg-primary-600 hover:bg-primary-500 text-white rounded-md transition-colors font-medium">Create</button>
+          </div>
+        </div>
+      )}
+
+      {/* Groups list */}
+      <div className="space-y-2">
+        {groups.map((g) => {
+          const isExpanded = expandedId === g.id;
+          const availableUsers = allUsers.filter(u => !g.members.some(m => m.id === u.id));
+          const availableProjects = allProjects.filter(p => !g.projects.some(gp => gp.id === p.id));
+
+          return (
+            <div key={g.id} className="rounded-lg border border-surface-700 overflow-hidden">
+              {/* Group header */}
+              <div
+                className="flex items-center justify-between px-4 py-3 bg-surface-800/40 cursor-pointer hover:bg-surface-800/60 transition-colors"
+                onClick={() => setExpandedId(isExpanded ? null : g.id)}
+              >
+                <div className="flex items-center gap-2">
+                  <svg className={`w-4 h-4 text-gray-500 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                  <span className="text-[13px] font-semibold text-gray-200">{g.name}</span>
+                  {g.isGlobal && (
+                    <span className="text-[10px] bg-yellow-600/20 text-yellow-400 border border-yellow-500/30 px-1.5 py-0.5 rounded-full">global</span>
+                  )}
+                  {g.description && <span className="text-[11px] text-gray-600 ml-1">{g.description}</span>}
+                </div>
+                <div className="flex items-center gap-3 text-[11px] text-gray-500">
+                  <span>{g.members.length} members</span>
+                  <span>{g.projects.length} projects</span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDelete(g.id, g.name); }}
+                    className="p-1 text-gray-600 hover:text-red-400 transition-colors rounded"
+                    title="Delete group"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                  </button>
+                </div>
+              </div>
+
+              {/* Expanded content */}
+              {isExpanded && (
+                <div className="px-4 py-3 space-y-4 border-t border-surface-700/50">
+                  {/* Members */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Members</span>
+                      {availableUsers.length > 0 && (
+                        <select
+                          className="bg-surface-900 border border-surface-700 text-gray-400 rounded-md px-2 py-1 text-[11px]"
+                          value=""
+                          onChange={(e) => { if (e.target.value) handleAddUser(g.id, parseInt(e.target.value)); }}
+                        >
+                          <option value="">+ Add member</option>
+                          {availableUsers.map(u => <option key={u.id} value={u.id}>{u.username}</option>)}
+                        </select>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {g.members.length === 0 && <span className="text-[11px] text-gray-600">No members</span>}
+                      {g.members.map(m => (
+                        <span key={m.id} className="inline-flex items-center gap-1 text-[11px] bg-surface-800 text-gray-300 px-2 py-1 rounded-md border border-surface-700">
+                          {m.username}
+                          <button onClick={() => handleRemoveUser(g.id, m.id)} className="text-gray-600 hover:text-red-400 ml-0.5">
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Projects */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Projects</span>
+                      {availableProjects.length > 0 && (
+                        <select
+                          className="bg-surface-900 border border-surface-700 text-gray-400 rounded-md px-2 py-1 text-[11px]"
+                          value=""
+                          onChange={(e) => { if (e.target.value) handleAddProject(g.id, e.target.value); }}
+                        >
+                          <option value="">+ Add project</option>
+                          {availableProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {g.projects.length === 0 && <span className="text-[11px] text-gray-600">{g.isGlobal ? 'Global: sees all projects' : 'No projects assigned'}</span>}
+                      {g.projects.map(p => (
+                        <span key={p.id} className="inline-flex items-center gap-1 text-[11px] bg-surface-800 text-gray-300 px-2 py-1 rounded-md border border-surface-700">
+                          {p.name}
+                          <button onClick={() => handleRemoveProject(g.id, p.id)} className="text-gray-600 hover:text-red-400 ml-0.5">
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* How it works */}
+      <div className="p-3 bg-surface-800/30 rounded-lg border border-surface-700/50">
+        <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">How it works</h4>
+        <div className="text-[12px] text-gray-500 space-y-1">
+          <p><strong className="text-gray-400">No groups</strong> = everyone sees everything (current behavior).</p>
+          <p><strong className="text-gray-400">With groups</strong> = users only see projects assigned to their group(s).</p>
+          <p><strong className="text-gray-400">Unassigned projects</strong> remain visible to all (public).</p>
+          <p><strong className="text-gray-400">Global groups</strong> (like "Executive") see everything regardless.</p>
+          <p><strong className="text-gray-400">Admin</strong> users always see all projects.</p>
+        </div>
+      </div>
+    </div>
   );
 }
 

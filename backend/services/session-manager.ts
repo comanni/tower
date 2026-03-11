@@ -3,6 +3,7 @@ import { getDb } from '../db/schema.js';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { getAccessibleProjectIds } from './group-manager.js';
 
 export interface SessionMeta {
   id: string;
@@ -87,12 +88,25 @@ export function updateSession(id: string, updates: Partial<Pick<SessionMeta, 'na
   }
 }
 
-export function getSessions(userId?: number): SessionMeta[] {
+export function getSessions(userId?: number, role?: string): SessionMeta[] {
   const db = getDb();
-  // All users see the same sessions (team workspace)
   const query = db.prepare('SELECT * FROM sessions WHERE archived IS NULL OR archived = 0 ORDER BY updated_at DESC');
-  const rows = query.all();
-  return (rows as any[]).map(mapRow);
+  const rows = query.all() as any[];
+
+  // Group 필터: 접근 가능한 프로젝트의 세션만 반환
+  if (userId && role) {
+    const accessibleIds = getAccessibleProjectIds(userId, role);
+    if (accessibleIds !== null) {
+      return rows.filter(r => {
+        // 프로젝트 없는 세션 = 본인 것만
+        if (!r.project_id) return r.user_id === userId;
+        // 프로젝트 있는 세션 = 접근 가능한 프로젝트면 보임
+        return accessibleIds.includes(r.project_id);
+      }).map(mapRow);
+    }
+  }
+
+  return rows.map(mapRow);
 }
 
 function mapRow(row: any): SessionMeta {

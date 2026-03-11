@@ -20,6 +20,11 @@ memory_implementation.md
 codify.md
 devserver.md
 
+containerize.md
+group-permissions.md
+bwrap.md
+progress.md
+
 # Dev plans, issues, history (internal artifacts)
 docs/plans/
 history.md

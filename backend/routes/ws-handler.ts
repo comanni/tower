@@ -340,7 +340,7 @@ async function handleMessage(client: WsClient, data: any) {
       break;
     }
     case 'task_list': {
-      const tasks = getTasks(client.userId);
+      const tasks = getTasks(client.userId, client.userRole);
       send(client.ws, { type: 'task_list', tasks });
       break;
     }
@@ -529,6 +529,7 @@ async function handleChat(client: WsClient, data: { message: string; messageId?:
 
     // Build system prompt (Layer 2: team rules + role context)
     const systemPrompt = buildSystemPrompt({
+      userId: client.userId,
       username: client.username || 'anonymous',
       role: client.userRole || 'member',
       allowedPath: client.allowedPath,

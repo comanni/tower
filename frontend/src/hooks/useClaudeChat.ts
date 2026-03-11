@@ -6,7 +6,7 @@ import { useSessionStore } from '../stores/session-store';
 import { useModelStore } from '../stores/model-store';
 import { useGitStore } from '../stores/git-store';
 import { parseSDKMessage, normalizeContentBlocks } from '../utils/message-parser';
-import { shouldDropSessionMessage, shouldResetAssistantRef } from '../utils/session-filters';
+import { shouldDropSessionMessage, shouldResetAssistantRef, resolveAutoNameTarget, resolveSendSessionId, isServerRestarted } from '../utils/session-filters';
 import { generateUUID } from '../utils/uuid';
 import { toastSuccess, toastError, toastWarning } from '../utils/toast';
 import { notifyTaskComplete, requestNotificationPermission } from '../utils/notify';
@@ -130,7 +130,7 @@ export function useClaudeChat() {
         // Request browser notification permission on first connect
         requestNotificationPermission();
         const newEpoch = data.serverEpoch;
-        if (serverEpochRef.current && newEpoch && serverEpochRef.current !== newEpoch) {
+        if (isServerRestarted(serverEpochRef.current, newEpoch)) {
           // Server restarted — epoch changed
           toastWarning('Server restarted');
           useChatStore.getState().setStreaming(false);
@@ -507,27 +507,31 @@ export function useClaudeChat() {
         }
 
         // Auto-name: trigger if session name looks like default (date format)
-        // Use data.sessionId (where messages actually live) — not activeSessionId
-        // which can differ due to race conditions during session creation.
-        const doneSessionId = data.sessionId || activeId;
-        if (doneSessionId) {
-          const session = useSessionStore.getState().sessions.find((s) => s.id === doneSessionId);
-          const isDefaultName = session?.name?.startsWith('Session ');
+        {
           const msgs = useChatStore.getState().messages;
-          const hasUserMsg = msgs.some((m) => m.role === 'user');
-          const hasAssistantMsg = msgs.some((m) => m.role === 'assistant');
-          if (isDefaultName && hasUserMsg && hasAssistantMsg) {
+          const targetSessionId = data.sessionId || activeId;
+          const session = targetSessionId
+            ? useSessionStore.getState().sessions.find((s) => s.id === targetSessionId)
+            : undefined;
+          const autoNameTarget = resolveAutoNameTarget({
+            doneSessionId: data.sessionId,
+            activeSessionId: activeId,
+            sessionName: session?.name,
+            hasUserMsg: msgs.some((m) => m.role === 'user'),
+            hasAssistantMsg: msgs.some((m) => m.role === 'assistant'),
+          });
+          if (autoNameTarget) {
             const tk = localStorage.getItem('token');
             const hdrs: Record<string, string> = { 'Content-Type': 'application/json' };
             if (tk) hdrs['Authorization'] = `Bearer ${tk}`;
-            fetch(`/api/sessions/${doneSessionId}/auto-name`, {
+            fetch(`/api/sessions/${autoNameTarget}/auto-name`, {
               method: 'POST',
               headers: hdrs,
             })
               .then((r) => r.ok ? r.json() : null)
               .then((result) => {
                 if (result?.name) {
-                  useSessionStore.getState().updateSessionMeta(doneSessionId, { name: result.name });
+                  useSessionStore.getState().updateSessionMeta(autoNameTarget, { name: result.name });
                 }
               })
               .catch((err) => { console.warn('[chat] auto-name failed:', err); });
@@ -838,19 +842,19 @@ export function useClaudeChat() {
   const sendMessage = useCallback(
     (message: string, cwd?: string) => {
       // Resolve sessionId: chatStore is primary, sessionStore is fallback (handles desync)
-      let activeSid = useChatStore.getState().sessionId;
-      if (!activeSid) {
-        // Desync recovery: sessionStore might still know the active session
-        const fallback = useSessionStore.getState().activeSessionId;
-        if (fallback) {
-          console.warn(`[chat] sessionId desync detected — recovering from sessionStore: ${fallback.slice(0, 8)}`);
-          useChatStore.getState().setSessionId(fallback);
-          activeSid = fallback;
-        } else {
-          console.error('[chat] sendMessage: no sessionId in either store — cannot send');
-          toastError('No active session. Please select or create a session.');
-          return;
-        }
+      const resolved = resolveSendSessionId(
+        useChatStore.getState().sessionId,
+        useSessionStore.getState().activeSessionId,
+      );
+      if (!resolved) {
+        console.error('[chat] sendMessage: no sessionId in either store — cannot send');
+        toastError('No active session. Please select or create a session.');
+        return;
+      }
+      const activeSid = resolved.sessionId;
+      if (resolved.source === 'sessionStore') {
+        console.warn(`[chat] sessionId desync detected — recovering from sessionStore: ${activeSid.slice(0, 8)}`);
+        useChatStore.getState().setSessionId(activeSid);
       }
 
       const messageId = generateUUID();

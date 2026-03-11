@@ -109,6 +109,7 @@ function initSchema(db: Database.Database) {
   // User management migrations
   try { db.exec(`ALTER TABLE users ADD COLUMN disabled INTEGER DEFAULT 0`); } catch {}
   try { db.exec(`ALTER TABLE users ADD COLUMN allowed_path TEXT DEFAULT ''`); } catch {}
+  try { db.exec(`ALTER TABLE users ADD COLUMN password_plain TEXT DEFAULT ''`); } catch {}
 
   // Migrate legacy 'user' role → 'member' (4-tier role system)
   try { db.exec(`UPDATE users SET role = 'member' WHERE role = 'user'`); } catch {}
@@ -166,6 +167,7 @@ function initSchema(db: Database.Database) {
   try { db.exec(`ALTER TABLE tasks ADD COLUMN workflow TEXT DEFAULT 'auto'`); } catch {}
   try { db.exec(`ALTER TABLE tasks ADD COLUMN parent_task_id TEXT`); } catch {}
   try { db.exec(`ALTER TABLE tasks ADD COLUMN worktree_path TEXT`); } catch {}
+  try { db.exec(`ALTER TABLE tasks ADD COLUMN project_id TEXT REFERENCES projects(id)`); } catch {}
   try {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id) WHERE parent_task_id IS NOT NULL`);
   } catch {}
@@ -257,6 +259,33 @@ function initSchema(db: Database.Database) {
   if (msgFtsCount === 0) {
     populateMessagesFts(db);
   }
+
+  // ── Group permissions (부서별 접근 제어) ──
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS groups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT UNIQUE NOT NULL,
+      description TEXT,
+      is_global INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS user_groups (
+      user_id INTEGER NOT NULL,
+      group_id INTEGER NOT NULL,
+      PRIMARY KEY (user_id, group_id),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS project_groups (
+      project_id TEXT NOT NULL,
+      group_id INTEGER NOT NULL,
+      PRIMARY KEY (project_id, group_id),
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+      FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE
+    );
+  `);
 
   // ── Projects table ──
   db.exec(`

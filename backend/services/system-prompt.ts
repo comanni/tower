@@ -10,6 +10,7 @@
  */
 
 import { getDb } from '../db/schema.js';
+import { getUserGroups } from './group-manager.js';
 
 // ─── DB Operations ──────────────────────────────────────────────────────────
 
@@ -69,6 +70,7 @@ const ROLE_CONTEXT: Record<string, string> = {
  *   - Allowed path info (if restricted)
  */
 export function buildSystemPrompt(user: {
+  userId?: number;
   username: string;
   role: string;
   allowedPath?: string;
@@ -77,10 +79,25 @@ export function buildSystemPrompt(user: {
   const base = getSystemPrompt('default');
   const teamPrompt = base?.prompt || '';
 
-  // 2. Role context
+  // 2. Tower environment context
+  const towerCtx = [
+    '## Environment',
+    'You are running inside Tower — a multi-user web interface for Claude.',
+    'Multiple users share this server. Each user has their own sessions and projects.',
+    'Files in workspace/ are shared across users. Be mindful that others may also work in the same folders.',
+    'Projects organize chat sessions and provide context via CLAUDE.md files.',
+  ].join('\n');
+
+  // 3. Role context
   const roleCtx = ROLE_CONTEXT[user.role] || ROLE_CONTEXT.member;
 
-  // 3. Path restriction info
+  // 4. User identity + groups
+  const groups = user.userId ? getUserGroups(user.userId) : [];
+  const groupInfo = groups.length > 0
+    ? `Groups: ${groups.map(g => g.name).join(', ')}`
+    : '';
+
+  // 5. Path restriction info
   const pathInfo = user.allowedPath
     ? `Your workspace is restricted to: ${user.allowedPath}`
     : '';
@@ -89,8 +106,11 @@ export function buildSystemPrompt(user: {
   const parts = [
     teamPrompt,
     '',
+    towerCtx,
+    '',
     `User: ${user.username} (role: ${user.role})`,
     roleCtx,
+    groupInfo,
     pathInfo,
   ].filter(Boolean);
 

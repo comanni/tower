@@ -18,12 +18,16 @@ vi.mock('../services/claude-sdk.js', () => ({
   getClaudeSessionId: mockGetClaudeSessionId,
   getActiveSessionCount: mockGetActiveSessionCount,
   getSession: mockGetSDKSession,
+  getRunningSessionIds: vi.fn(() => []),
+  backupSessionFile: vi.fn(),
 }));
 
+const mockSaveMessage = vi.fn();
 vi.mock('../services/message-store.js', () => ({
-  saveMessage: vi.fn(),
+  saveMessage: mockSaveMessage,
   updateMessageContent: vi.fn(),
   attachToolResultInDb: vi.fn(),
+  updateMessageMetrics: vi.fn(),
 }));
 
 vi.mock('../services/session-manager.js', () => ({
@@ -44,6 +48,35 @@ vi.mock('../services/git-manager.js', () => ({
 
 vi.mock('../services/auth.js', () => ({
   verifyWsToken: vi.fn(() => null),
+  getUserAllowedPath: vi.fn(() => null),
+}));
+
+vi.mock('../db/schema.js', () => ({
+  getDb: vi.fn(() => ({
+    prepare: vi.fn(() => ({
+      all: vi.fn(() => []),
+      get: vi.fn(() => null),
+      run: vi.fn(),
+    })),
+  })),
+}));
+
+vi.mock('../services/task-runner.js', () => ({
+  spawnTask: vi.fn(),
+  abortTask: vi.fn(),
+}));
+
+vi.mock('../services/damage-control.js', () => ({
+  buildDamageControl: vi.fn(() => () => true),
+  buildPathEnforcement: vi.fn(() => null),
+}));
+
+vi.mock('../services/system-prompt.js', () => ({
+  buildSystemPrompt: vi.fn(() => 'test system prompt'),
+}));
+
+vi.mock('../services/task-manager.js', () => ({
+  getTasks: vi.fn(() => []),
 }));
 
 vi.mock('../config.js', () => ({
@@ -393,7 +426,7 @@ describe('ws-handler integration', () => {
   describe('ws close', () => {
     it('cleans up and allows new client to take over session', async () => {
       const { ws, messages } = await createWsClient();
-      const connected = await waitForMessage(messages, 'connected');
+      await waitForMessage(messages, 'connected');
 
       sendJson(ws, { type: 'set_active_session', sessionId: 's1' });
       await waitForMessage(messages, 'set_active_session_ack');
@@ -419,6 +452,118 @@ describe('ws-handler integration', () => {
       const msg = await waitForMessage(clientB.messages, 'sdk_message');
       expect(msg.sessionId).toBe('s1');
 
+      clientB.ws.close();
+    });
+  });
+
+  // ── Message routing correctness ────────────────────────────────
+  // Regression tests: messages must be saved under the correct sessionId.
+  // Past bug: frontend sent sessionId A, but messages were stored under B
+  // due to session creation race conditions.
+
+  describe('message routing — sessionId consistency', () => {
+    it('saves user message under the sessionId from chat request', async () => {
+      const { ws, messages } = await createWsClient();
+      await waitForMessage(messages, 'connected');
+      sendJson(ws, { type: 'set_active_session', sessionId: 'route-s1' });
+      await waitForMessage(messages, 'set_active_session_ack');
+
+      mockExecuteQuery.mockImplementationOnce(async function* () {
+        yield { type: 'assistant', uuid: 'r1', message: { content: [{ type: 'text', text: 'ok' }] } };
+      });
+
+      sendJson(ws, { type: 'chat', message: 'test routing', sessionId: 'route-s1' });
+      await waitForMessage(messages, 'sdk_done');
+
+      // saveMessage should have been called with 'route-s1' for the user message
+      const userSave = mockSaveMessage.mock.calls.find(
+        (args: any[]) => args[0] === 'route-s1' && args[1]?.role === 'user'
+      );
+      expect(userSave).toBeTruthy();
+      expect(userSave![1].content[0].text).toBe('test routing');
+
+      ws.close();
+    });
+
+    it('sdk_done includes the same sessionId as the chat request', async () => {
+      const { ws, messages } = await createWsClient();
+      await waitForMessage(messages, 'connected');
+      sendJson(ws, { type: 'set_active_session', sessionId: 'done-s1' });
+      await waitForMessage(messages, 'set_active_session_ack');
+
+      mockExecuteQuery.mockImplementationOnce(async function* () {
+        yield { type: 'assistant', uuid: 'd1', message: { content: [{ type: 'text', text: 'hi' }] } };
+      });
+
+      sendJson(ws, { type: 'chat', message: 'check done', sessionId: 'done-s1' });
+      const done = await waitForMessage(messages, 'sdk_done');
+
+      // sdk_done must carry the original sessionId so frontend auto-name uses it
+      expect(done.sessionId).toBe('done-s1');
+
+      ws.close();
+    });
+
+    it('rejects chat when no sessionId is provided', async () => {
+      const { ws, messages } = await createWsClient();
+      await waitForMessage(messages, 'connected');
+
+      // Send chat without sessionId and without prior set_active_session
+      sendJson(ws, { type: 'chat', message: 'orphan message' });
+      const err = await waitForMessage(messages, 'error');
+
+      expect(err.errorCode).toBe('NO_SESSION_ID');
+
+      ws.close();
+    });
+
+    it('uses client.sessionId as fallback when chat request omits sessionId', async () => {
+      const { ws, messages } = await createWsClient();
+      await waitForMessage(messages, 'connected');
+
+      // First set active session to establish client.sessionId
+      sendJson(ws, { type: 'set_active_session', sessionId: 'fallback-s1' });
+      await waitForMessage(messages, 'set_active_session_ack');
+
+      mockExecuteQuery.mockImplementationOnce(async function* () {
+        yield { type: 'assistant', uuid: 'f1', message: { content: [{ type: 'text', text: 'fallback' }] } };
+      });
+
+      // Send chat WITHOUT sessionId — should use client.sessionId
+      sendJson(ws, { type: 'chat', message: 'no explicit sid' });
+      const done = await waitForMessage(messages, 'sdk_done');
+      expect(done.sessionId).toBe('fallback-s1');
+
+      ws.close();
+    });
+
+    it('session_status broadcasts carry the correct sessionId', async () => {
+      const clientA = await createWsClient();
+      await waitForMessage(clientA.messages, 'connected');
+      sendJson(clientA.ws, { type: 'set_active_session', sessionId: 'status-s1' });
+      await waitForMessage(clientA.messages, 'set_active_session_ack');
+
+      // Client B on different session — should still get session_status (broadcast to all)
+      const clientB = await createWsClient();
+      await waitForMessage(clientB.messages, 'connected');
+      sendJson(clientB.ws, { type: 'set_active_session', sessionId: 'status-s2' });
+      await waitForMessage(clientB.messages, 'set_active_session_ack');
+
+      mockExecuteQuery.mockImplementationOnce(async function* () {
+        yield { type: 'assistant', uuid: 'st1', message: { content: [{ type: 'text', text: 'x' }] } };
+      });
+
+      sendJson(clientA.ws, { type: 'chat', message: 'status test', sessionId: 'status-s1' });
+
+      // Both clients should get session_status with streaming then idle
+      const statusA = await waitForMessage(clientA.messages, 'session_status');
+      expect(statusA.sessionId).toBe('status-s1');
+
+      // Client B should also get session_status (broadcastToAll) with correct sessionId
+      const statusB = await waitForMessage(clientB.messages, 'session_status');
+      expect(statusB.sessionId).toBe('status-s1');
+
+      clientA.ws.close();
       clientB.ws.close();
     });
   });
