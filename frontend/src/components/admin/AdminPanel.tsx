@@ -639,7 +639,7 @@ function GroupManagement({ token }: { token?: string | null }) {
   };
 
   const handleDelete = async (id: number, name: string) => {
-    if (!window.confirm(`Delete group "${name}"? Members and projects will be unlinked.`)) return;
+    if (!window.confirm(`Delete group "${name}"? Members will be unlinked.`)) return;
     await fetch(`${API_BASE}/admin/groups/${id}`, { method: 'DELETE', headers: headers() });
     fetchGroups();
   };
@@ -659,17 +659,10 @@ function GroupManagement({ token }: { token?: string | null }) {
     fetchGroups();
   };
 
-  const handleAddProject = async (groupId: number, projectId: string) => {
-    await fetch(`${API_BASE}/admin/groups/${groupId}/projects`, {
+  const handleInviteGroupToProject = async (groupId: number, projectId: string) => {
+    await fetch(`${API_BASE}/projects/${projectId}/members`, {
       method: 'POST', headers: headers(),
-      body: JSON.stringify({ projectId }),
-    });
-    fetchGroups();
-  };
-
-  const handleRemoveProject = async (groupId: number, projectId: string) => {
-    await fetch(`${API_BASE}/admin/groups/${groupId}/projects/${projectId}`, {
-      method: 'DELETE', headers: headers(),
+      body: JSON.stringify({ groupId }),
     });
     fetchGroups();
   };
@@ -718,15 +711,7 @@ function GroupManagement({ token }: { token?: string | null }) {
               />
             </div>
           </div>
-          <label className="flex items-center gap-2 text-[12px] text-gray-400 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={newGroup.isGlobal}
-              onChange={(e) => setNewGroup({ ...newGroup, isGlobal: e.target.checked })}
-              className="rounded border-surface-600"
-            />
-            Global access (members see all projects, like an executive team)
-          </label>
+          {/* Groups are now a bulk-invite tool, not access control */}
           <div className="flex justify-end gap-2 pt-1">
             <button onClick={() => { setShowForm(false); setError(''); }} className="px-4 py-2 text-[12px] text-gray-400 hover:text-gray-200 transition-colors rounded-md">Cancel</button>
             <button onClick={handleCreate} className="px-4 py-2 text-[12px] bg-primary-600 hover:bg-primary-500 text-white rounded-md transition-colors font-medium">Create</button>
@@ -739,7 +724,6 @@ function GroupManagement({ token }: { token?: string | null }) {
         {groups.map((g) => {
           const isExpanded = expandedId === g.id;
           const availableUsers = allUsers.filter(u => !g.members.some(m => m.id === u.id));
-          const availableProjects = allProjects.filter(p => !g.projects.some(gp => gp.id === p.id));
 
           return (
             <div key={g.id} className="rounded-lg border border-surface-700 overflow-hidden">
@@ -753,14 +737,10 @@ function GroupManagement({ token }: { token?: string | null }) {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
                   <span className="text-[13px] font-semibold text-gray-200">{g.name}</span>
-                  {g.isGlobal && (
-                    <span className="text-[10px] bg-yellow-600/20 text-yellow-400 border border-yellow-500/30 px-1.5 py-0.5 rounded-full">global</span>
-                  )}
                   {g.description && <span className="text-[11px] text-gray-600 ml-1">{g.description}</span>}
                 </div>
                 <div className="flex items-center gap-3 text-[11px] text-gray-500">
                   <span>{g.members.length} members</span>
-                  <span>{g.projects.length} projects</span>
                   <button
                     onClick={(e) => { e.stopPropagation(); handleDelete(g.id, g.name); }}
                     className="p-1 text-gray-600 hover:text-red-400 transition-colors rounded"
@@ -802,32 +782,24 @@ function GroupManagement({ token }: { token?: string | null }) {
                     </div>
                   </div>
 
-                  {/* Projects */}
+                  {/* Invite group to project */}
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Projects</span>
-                      {availableProjects.length > 0 && (
-                        <select
-                          className="bg-surface-900 border border-surface-700 text-gray-400 rounded-md px-2 py-1 text-[11px]"
-                          value=""
-                          onChange={(e) => { if (e.target.value) handleAddProject(g.id, e.target.value); }}
-                        >
-                          <option value="">+ Add project</option>
-                          {availableProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                        </select>
-                      )}
+                      <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Invite to Project</span>
                     </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {g.projects.length === 0 && <span className="text-[11px] text-gray-600">{g.isGlobal ? 'Global: sees all projects' : 'No projects assigned'}</span>}
-                      {g.projects.map(p => (
-                        <span key={p.id} className="inline-flex items-center gap-1 text-[11px] bg-surface-800 text-gray-300 px-2 py-1 rounded-md border border-surface-700">
-                          {p.name}
-                          <button onClick={() => handleRemoveProject(g.id, p.id)} className="text-gray-600 hover:text-red-400 ml-0.5">
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                          </button>
-                        </span>
-                      ))}
-                    </div>
+                    {allProjects.length > 0 ? (
+                      <select
+                        className="bg-surface-900 border border-surface-700 text-gray-400 rounded-md px-2 py-1 text-[11px]"
+                        value=""
+                        onChange={(e) => { if (e.target.value) handleInviteGroupToProject(g.id, e.target.value); }}
+                      >
+                        <option value="">Select project to invite all members...</option>
+                        {allProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                    ) : (
+                      <span className="text-[11px] text-gray-600">No projects available</span>
+                    )}
+                    <p className="text-[10px] text-gray-600 mt-1">Adds all group members to the selected project (snapshot copy)</p>
                   </div>
                 </div>
               )}
@@ -840,10 +812,9 @@ function GroupManagement({ token }: { token?: string | null }) {
       <div className="p-3 bg-surface-800/30 rounded-lg border border-surface-700/50">
         <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">How it works</h4>
         <div className="text-[12px] text-gray-500 space-y-1">
-          <p><strong className="text-gray-400">No groups</strong> = everyone sees everything (current behavior).</p>
-          <p><strong className="text-gray-400">With groups</strong> = users only see projects assigned to their group(s).</p>
-          <p><strong className="text-gray-400">Unassigned projects</strong> remain visible to all (public).</p>
-          <p><strong className="text-gray-400">Global groups</strong> (like "Executive") see everything regardless.</p>
+          <p><strong className="text-gray-400">Groups</strong> = bulk-invite tool for adding many users to a project at once.</p>
+          <p><strong className="text-gray-400">Project access</strong> is now controlled by project members, not groups.</p>
+          <p><strong className="text-gray-400">Project owners</strong> can invite/remove members directly.</p>
           <p><strong className="text-gray-400">Admin</strong> users always see all projects.</p>
         </div>
       </div>

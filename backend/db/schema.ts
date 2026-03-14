@@ -283,14 +283,6 @@ function initSchema(db: Database.Database) {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE
     );
-
-    CREATE TABLE IF NOT EXISTS project_groups (
-      project_id TEXT NOT NULL,
-      group_id INTEGER NOT NULL,
-      PRIMARY KEY (project_id, group_id),
-      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
-      FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE
-    );
   `);
 
   // ── Projects table ──
@@ -309,6 +301,23 @@ function initSchema(db: Database.Database) {
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
   `);
+
+  // ── Project members (직접 멤버십) ──
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS project_members (
+      project_id  TEXT    NOT NULL,
+      user_id     INTEGER NOT NULL,
+      role        TEXT    NOT NULL DEFAULT 'member',
+      added_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (project_id, user_id),
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_pm_user ON project_members(user_id);
+  `);
+
+  // ── Migrate project_groups → project_members (one-time) ──
+  _migrateProjectGroupsToMembers(db);
 
   // Add project_id FK to sessions
   try { db.exec(`ALTER TABLE sessions ADD COLUMN project_id TEXT REFERENCES projects(id)`); } catch {}
@@ -365,6 +374,61 @@ function initSchema(db: Database.Database) {
         ON sessions(claude_session_id) WHERE claude_session_id IS NOT NULL
     `);
   } catch {}
+}
+
+/**
+ * One-time migration: project_groups + user_groups → project_members, then DROP project_groups.
+ * Also migrates is_global group members to all projects.
+ */
+function _migrateProjectGroupsToMembers(db: Database.Database) {
+  // Check if project_groups table still exists
+  const hasTable = db.prepare(
+    `SELECT 1 FROM sqlite_master WHERE type='table' AND name='project_groups'`
+  ).get();
+  if (!hasTable) return; // Already migrated
+
+  console.log('[db] Migrating project_groups → project_members...');
+
+  const tx = db.transaction(() => {
+    // 1. Copy project_groups + user_groups → project_members
+    db.exec(`
+      INSERT OR IGNORE INTO project_members (project_id, user_id, role)
+      SELECT pg.project_id, ug.user_id, 'member'
+      FROM project_groups pg
+      JOIN user_groups ug ON pg.group_id = ug.group_id
+    `);
+
+    // 2. Global group members → all non-archived projects
+    db.exec(`
+      INSERT OR IGNORE INTO project_members (project_id, user_id, role)
+      SELECT p.id, ug.user_id, 'member'
+      FROM projects p
+      CROSS JOIN user_groups ug
+      JOIN groups g ON g.id = ug.group_id
+      WHERE g.is_global = 1 AND p.archived = 0
+    `);
+
+    // 3. Project creators → owner
+    db.exec(`
+      INSERT OR IGNORE INTO project_members (project_id, user_id, role)
+      SELECT id, user_id, 'owner'
+      FROM projects WHERE user_id IS NOT NULL
+    `);
+
+    // 4. For creators already inserted as 'member', upgrade to 'owner'
+    db.exec(`
+      UPDATE project_members SET role = 'owner'
+      WHERE (project_id, user_id) IN (
+        SELECT id, user_id FROM projects WHERE user_id IS NOT NULL
+      ) AND role = 'member'
+    `);
+
+    // 5. Drop project_groups
+    db.exec(`DROP TABLE IF EXISTS project_groups`);
+  });
+
+  tx();
+  console.log('[db] Migration complete: project_groups dropped, project_members populated');
 }
 
 function populateMessagesFts(db: Database.Database) {

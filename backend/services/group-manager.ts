@@ -10,7 +10,6 @@ export interface Group {
 
 export interface GroupWithMembers extends Group {
   members: { id: number; username: string }[];
-  projects: { id: string; name: string }[];
 }
 
 function rowToGroup(row: any): Group {
@@ -51,12 +50,6 @@ export function listGroups(): GroupWithMembers[] {
        WHERE ug.group_id = ? AND u.disabled = 0
        ORDER BY u.username`
     ).all(g.id) as { id: number; username: string }[],
-    projects: db.prepare(
-      `SELECT p.id, p.name FROM projects p
-       JOIN project_groups pg ON pg.project_id = p.id
-       WHERE pg.group_id = ? AND p.archived = 0
-       ORDER BY p.name`
-    ).all(g.id) as { id: string; name: string }[],
   }));
 }
 
@@ -102,62 +95,90 @@ export function getUserGroups(userId: number): Group[] {
   return rows.map(rowToGroup);
 }
 
-// ── Project ↔ Group ──
+// ── Project Members ──
 
-export function addProjectToGroup(projectId: string, groupId: number): void {
-  const db = getDb();
-  db.prepare('INSERT OR IGNORE INTO project_groups (project_id, group_id) VALUES (?, ?)').run(projectId, groupId);
+export interface ProjectMember {
+  userId: number;
+  username: string;
+  role: string;
+  addedAt: string;
 }
 
-export function removeProjectFromGroup(projectId: string, groupId: number): void {
+export function getProjectMembers(projectId: string): ProjectMember[] {
   const db = getDb();
-  db.prepare('DELETE FROM project_groups WHERE project_id = ? AND group_id = ?').run(projectId, groupId);
+  return db.prepare(`
+    SELECT pm.user_id as userId, u.username, pm.role, pm.added_at as addedAt
+    FROM project_members pm
+    JOIN users u ON u.id = pm.user_id
+    WHERE pm.project_id = ? AND u.disabled = 0
+    ORDER BY pm.role DESC, u.username
+  `).all(projectId) as ProjectMember[];
 }
 
-export function getProjectGroups(projectId: string): Group[] {
+export function addProjectMember(projectId: string, userId: number, role = 'member'): void {
   const db = getDb();
-  const rows = db.prepare(
-    `SELECT g.* FROM groups g
-     JOIN project_groups pg ON pg.group_id = g.id
-     WHERE pg.project_id = ?
-     ORDER BY g.name`
-  ).all(projectId) as any[];
-  return rows.map(rowToGroup);
+  db.prepare(
+    'INSERT OR IGNORE INTO project_members (project_id, user_id, role) VALUES (?, ?, ?)'
+  ).run(projectId, userId, role);
+}
+
+export function removeProjectMember(projectId: string, userId: number): boolean {
+  const db = getDb();
+  // Prevent removing last owner
+  const ownerCount = (db.prepare(
+    `SELECT COUNT(*) as cnt FROM project_members WHERE project_id = ? AND role = 'owner'`
+  ).get(projectId) as any).cnt;
+  const isOwner = db.prepare(
+    `SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ? AND role = 'owner'`
+  ).get(projectId, userId);
+  if (isOwner && ownerCount <= 1) return false; // Can't remove last owner
+
+  db.prepare('DELETE FROM project_members WHERE project_id = ? AND user_id = ?').run(projectId, userId);
+  return true;
+}
+
+export function isProjectOwner(projectId: string, userId: number): boolean {
+  const db = getDb();
+  return !!db.prepare(
+    `SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ? AND role = 'owner'`
+  ).get(projectId, userId);
+}
+
+export function isProjectMember(projectId: string, userId: number): boolean {
+  const db = getDb();
+  return !!db.prepare(
+    'SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?'
+  ).get(projectId, userId);
+}
+
+export function inviteGroupToProject(groupId: number, projectId: string): number {
+  const db = getDb();
+  const result = db.prepare(`
+    INSERT OR IGNORE INTO project_members (project_id, user_id, role)
+    SELECT ?, ug.user_id, 'member'
+    FROM user_groups ug
+    JOIN users u ON u.id = ug.user_id
+    WHERE ug.group_id = ? AND u.disabled = 0
+  `).run(projectId, groupId);
+  return result.changes;
 }
 
 // ── Core: 사용자가 접근 가능한 프로젝트 ID 목록 ──
 
 export function getAccessibleProjectIds(userId: number, role: string): string[] | null {
-  // admin은 전부 접근 가능 → null = 필터링 안 함
+  // admin → 전부 접근 가능
   if (role === 'admin') return null;
 
   const db = getDb();
 
-  // 그룹 테이블이 비어있으면 → 기존 동작 (필터링 안 함)
-  const groupCount = (db.prepare('SELECT COUNT(*) as cnt FROM groups').get() as any).cnt;
-  if (groupCount === 0) return null;
-
-  // 사용자가 is_global 그룹에 속하면 → 전부 접근 가능
-  const hasGlobal = db.prepare(
-    `SELECT 1 FROM user_groups ug
-     JOIN groups g ON g.id = ug.group_id
-     WHERE ug.user_id = ? AND g.is_global = 1
-     LIMIT 1`
-  ).get(userId);
-  if (hasGlobal) return null;
-
-  // 접근 가능한 프로젝트:
-  // 1. 사용자의 그룹에 속한 프로젝트
-  // 2. 본인이 만든 프로젝트
-  // (미배정 프로젝트는 비공개 — 생성자 + admin만 보임)
+  // project_members에 있는 프로젝트 + 본인이 만든 프로젝트
   const rows = db.prepare(`
     SELECT DISTINCT p.id FROM projects p
     WHERE p.archived = 0
       AND (
         EXISTS (
-          SELECT 1 FROM project_groups pg
-          JOIN user_groups ug ON ug.group_id = pg.group_id
-          WHERE pg.project_id = p.id AND ug.user_id = ?
+          SELECT 1 FROM project_members pm
+          WHERE pm.project_id = p.id AND pm.user_id = ?
         )
         OR p.user_id = ?
       )

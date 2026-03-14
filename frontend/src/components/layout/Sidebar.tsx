@@ -102,9 +102,18 @@ export function Sidebar({
     setFileTreeDragOver(false);
     if (e.dataTransfer.getData('application/x-attachment')) return;
     const files = e.dataTransfer.files;
-    if (files.length === 0 || !treeRoot) return;
+    if (files.length === 0) return;
+
+    // Fallback: use active session cwd or request tree root if treeRoot is empty
+    const activeSession = sessions.find((s) => s.id === activeSessionId);
+    const uploadDir = treeRoot || activeSession?.cwd || '';
+    if (!uploadDir) {
+      toastError('Upload target not ready. Open the Files tab first, then try again.');
+      return;
+    }
+
     const formData = new FormData();
-    formData.append('targetDir', treeRoot);
+    formData.append('targetDir', uploadDir);
     for (const file of Array.from(files)) formData.append('files', file);
     try {
       const token = localStorage.getItem('token');
@@ -112,14 +121,15 @@ export function Sidebar({
       if (token) headers['Authorization'] = `Bearer ${token}`;
       const res = await fetch('/api/files/upload', { method: 'POST', headers, body: formData });
       const data = await res.json();
-      if (!res.ok) { toastError(data.error || 'Upload failed'); return; }
+      if (!res.ok) { toastError(data.error || `Upload failed (${res.status})`); return; }
       const ok = data.results.filter((r: { error?: string }) => !r.error);
       const fail = data.results.filter((r: { error?: string }) => r.error);
       if (ok.length > 0) toastSuccess(`${ok.length} file(s) uploaded`);
-      if (fail.length > 0) toastError(`${fail.length} file(s) failed`);
+      if (fail.length > 0) toastError(`${fail.length} file(s) failed: ${fail.map((f: { name: string; error?: string }) => `${f.name}: ${f.error}`).join(', ')}`);
       onRequestFileTree();
-    } catch {
-      toastError('Upload failed');
+    } catch (err) {
+      console.error('[sidebar] File upload error:', err);
+      toastError(`Upload failed: ${err instanceof Error ? err.message : 'Network error'}`);
     }
   };
 
@@ -629,13 +639,16 @@ function FileTreeToolbar({ treeRoot, onRefresh }: { treeRoot: string; onRefresh:
       if (token) headers['Authorization'] = `Bearer ${token}`;
       const res = await fetch('/api/files/upload', { method: 'POST', headers, body: formData });
       const data = await res.json();
-      if (!res.ok) { toastError(data.error || 'Upload failed'); return; }
+      if (!res.ok) { toastError(data.error || `Upload failed (${res.status})`); return; }
       const ok = data.results.filter((r: { error?: string }) => !r.error);
       const fail = data.results.filter((r: { error?: string }) => r.error);
       if (ok.length > 0) toastSuccess(`${ok.length} file(s) uploaded`);
-      if (fail.length > 0) toastError(`${fail.length} file(s) failed`);
+      if (fail.length > 0) toastError(`${fail.length} file(s) failed: ${fail.map((f: { name: string; error?: string }) => `${f.name}: ${f.error}`).join(', ')}`);
       onRefresh();
-    } catch { toastError('Upload failed'); }
+    } catch (err) {
+      console.error('[toolbar] File upload error:', err);
+      toastError(`Upload failed: ${err instanceof Error ? err.message : 'Network error'}`);
+    }
     // Reset input
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
@@ -1149,12 +1162,85 @@ function ProjectSettingsPanel({ project, onClose }: { project: Project; onClose:
   const [description, setDescription] = useState(project.description || '');
   const [rootPath, setRootPath] = useState(project.rootPath || '');
   const [saving, setSaving] = useState(false);
+  const [members, setMembers] = useState<{ userId: number; username: string; role: string }[]>([]);
+  const [memberSearch, setMemberSearch] = useState('');
+  const [searchResults, setSearchResults] = useState<{ id: number; username: string }[]>([]);
+  const [isOwner, setIsOwner] = useState(false);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
-  const handleSave = async () => {
-    setSaving(true);
+  const getAuthHeaders = () => {
     const token = localStorage.getItem('token');
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
+    return headers;
+  };
+
+  const currentUserId = (() => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return null;
+      return JSON.parse(atob(token.split('.')[1]))?.userId ?? null;
+    } catch { return null; }
+  })();
+
+  const isAdmin = localStorage.getItem('userRole') === 'admin';
+
+  useEffect(() => {
+    fetchMembers();
+  }, []);
+
+  const fetchMembers = async () => {
+    try {
+      const res = await fetch(`/api/projects/${project.id}/members`, { headers: getAuthHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setMembers(data);
+        setIsOwner(isAdmin || data.some((m: any) => m.userId === currentUserId && m.role === 'owner'));
+      }
+    } catch {}
+  };
+
+  const searchUsers = (q: string) => {
+    setMemberSearch(q);
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    if (!q.trim()) { setSearchResults([]); return; }
+    searchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/users/search?q=${encodeURIComponent(q)}`, { headers: getAuthHeaders() });
+        if (res.ok) {
+          const users = await res.json();
+          setSearchResults(users.filter((u: any) => !members.some(m => m.userId === u.id)));
+        }
+      } catch {}
+    }, 300);
+  };
+
+  const handleAddMember = async (userId: number) => {
+    try {
+      await fetch(`/api/projects/${project.id}/members`, {
+        method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ userId }),
+      });
+      setMemberSearch(''); setSearchResults([]);
+      fetchMembers();
+    } catch {}
+  };
+
+  const handleRemoveMember = async (userId: number) => {
+    try {
+      const res = await fetch(`/api/projects/${project.id}/members/${userId}`, {
+        method: 'DELETE', headers: getAuthHeaders(),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        toastError(data.error || 'Failed to remove member');
+      }
+      fetchMembers();
+    } catch {}
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    const headers = getAuthHeaders();
     try {
       const body: Record<string, any> = {};
       if (description !== (project.description || '')) body.description = description || null;
@@ -1190,6 +1276,52 @@ function ProjectSettingsPanel({ project, onClose }: { project: Project; onClose:
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
+      </div>
+
+      {/* Members */}
+      <div className="mb-3">
+        <div className={labelClass}>Members</div>
+        <div className="space-y-1 mb-2">
+          {members.map(m => (
+            <div key={m.userId} className="flex items-center justify-between text-[11px]">
+              <span className="text-gray-300">
+                {m.role === 'owner' ? '👑 ' : '👤 '}{m.username}
+                {m.userId === currentUserId && <span className="text-surface-600 ml-1">(you)</span>}
+              </span>
+              {isOwner && m.userId !== currentUserId && (
+                <button onClick={() => handleRemoveMember(m.userId)} className="text-surface-600 hover:text-red-400 transition-colors">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              )}
+            </div>
+          ))}
+          {members.length === 0 && <span className="text-[11px] text-surface-600">No members</span>}
+        </div>
+
+        {/* Add member search */}
+        {isOwner && (
+          <div className="relative">
+            <input
+              value={memberSearch}
+              onChange={(e) => searchUsers(e.target.value)}
+              placeholder="+ Add member..."
+              className="w-full bg-surface-700 border border-surface-600 rounded text-[11px] text-gray-300 px-2 py-1 placeholder-surface-600 outline-none focus:border-primary-500/50"
+            />
+            {searchResults.length > 0 && (
+              <div className="absolute left-0 right-0 top-full mt-0.5 bg-surface-900 border border-surface-700 rounded shadow-lg z-10 max-h-[100px] overflow-y-auto">
+                {searchResults.map(u => (
+                  <button
+                    key={u.id}
+                    onClick={() => handleAddMember(u.id)}
+                    className="w-full text-left px-2 py-1 text-[11px] text-gray-300 hover:bg-surface-700 transition-colors"
+                  >
+                    {u.username}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Description */}
@@ -1239,24 +1371,24 @@ function ProjectSettingsPanel({ project, onClose }: { project: Project; onClose:
 function NewProjectButton() {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
-  const [groupId, setGroupId] = useState<number | null>(null);
+  const [memberSearch, setMemberSearch] = useState('');
+  const [searchResults, setSearchResults] = useState<{ id: number; username: string }[]>([]);
+  const [selectedMembers, setSelectedMembers] = useState<{ id: number; username: string }[]>([]);
   const [myGroups, setMyGroups] = useState<{ id: number; name: string }[]>([]);
+  const [inviteGroupId, setInviteGroupId] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => {
     if (creating) {
       inputRef.current?.focus();
-      // Fetch user's groups
       const token = localStorage.getItem('token');
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
       fetch('/api/my/groups', { headers })
         .then(r => r.ok ? r.json() : [])
-        .then(groups => {
-          setMyGroups(groups);
-          if (groups.length === 1) setGroupId(groups[0].id); // Auto-select if only one
-        })
+        .then(groups => setMyGroups(groups))
         .catch(() => {});
     }
   }, [creating]);
@@ -1265,12 +1397,44 @@ function NewProjectButton() {
     if (!creating) return;
     const handler = (e: MouseEvent) => {
       if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
-        setName(''); setGroupId(null); setCreating(false);
+        resetForm();
       }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [creating]);
+
+  const resetForm = () => {
+    setName(''); setMemberSearch(''); setSearchResults([]); setSelectedMembers([]);
+    setInviteGroupId(null); setCreating(false);
+  };
+
+  const searchUsers = (q: string) => {
+    setMemberSearch(q);
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    if (!q.trim()) { setSearchResults([]); return; }
+    searchTimeoutRef.current = setTimeout(async () => {
+      const token = localStorage.getItem('token');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      try {
+        const res = await fetch(`/api/users/search?q=${encodeURIComponent(q)}`, { headers });
+        if (res.ok) {
+          const users = await res.json();
+          setSearchResults(users.filter((u: any) => !selectedMembers.some(m => m.id === u.id)));
+        }
+      } catch {}
+    }, 300);
+  };
+
+  const addMember = (user: { id: number; username: string }) => {
+    setSelectedMembers(prev => [...prev, user]);
+    setMemberSearch(''); setSearchResults([]);
+  };
+
+  const removeMember = (userId: number) => {
+    setSelectedMembers(prev => prev.filter(m => m.id !== userId));
+  };
 
   const handleCreate = async () => {
     const trimmed = name.trim();
@@ -1279,8 +1443,11 @@ function NewProjectButton() {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
     try {
+      const body: any = { name: trimmed };
+      if (selectedMembers.length > 0) body.memberIds = selectedMembers.map(m => m.id);
+      if (inviteGroupId) body.groupId = inviteGroupId;
       const res = await fetch('/api/projects', {
-        method: 'POST', headers, body: JSON.stringify({ name: trimmed, groupId }),
+        method: 'POST', headers, body: JSON.stringify(body),
       });
       if (res.ok) {
         const project = await res.json();
@@ -1292,9 +1459,7 @@ function NewProjectButton() {
     } catch {
       toastError('Failed to create project');
     }
-    setName('');
-    setGroupId(null);
-    setCreating(false);
+    resetForm();
   };
 
   return (
@@ -1310,32 +1475,72 @@ function NewProjectButton() {
         </svg>
       </button>
       {creating && (
-        <div className="absolute right-0 top-full mt-1 z-50 bg-surface-800 border border-surface-700 rounded-lg shadow-xl p-2 min-w-[220px] space-y-2">
+        <div className="absolute right-0 top-full mt-1 z-50 bg-surface-800 border border-surface-700 rounded-lg shadow-xl p-2 min-w-[260px] space-y-2">
           <input
             ref={inputRef}
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') handleCreate();
-              if (e.key === 'Escape') { setName(''); setGroupId(null); setCreating(false); }
+              if (e.key === 'Enter' && !memberSearch) handleCreate();
+              if (e.key === 'Escape') resetForm();
             }}
             placeholder="Project name..."
             className="w-full bg-surface-700 border border-surface-600 rounded text-[12px] text-gray-200 px-2.5 py-1.5 placeholder-surface-600 outline-none focus:border-primary-500/50"
           />
+
+          {/* Member invite */}
+          <div className="relative">
+            <input
+              value={memberSearch}
+              onChange={(e) => searchUsers(e.target.value)}
+              placeholder="Invite members..."
+              className="w-full bg-surface-700 border border-surface-600 rounded text-[11px] text-gray-300 px-2 py-1.5 placeholder-surface-600 outline-none focus:border-primary-500/50"
+            />
+            {searchResults.length > 0 && (
+              <div className="absolute left-0 right-0 top-full mt-0.5 bg-surface-900 border border-surface-700 rounded shadow-lg z-10 max-h-[120px] overflow-y-auto">
+                {searchResults.map(u => (
+                  <button
+                    key={u.id}
+                    onClick={() => addMember(u)}
+                    className="w-full text-left px-2 py-1 text-[11px] text-gray-300 hover:bg-surface-700 transition-colors"
+                  >
+                    {u.username}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Selected members */}
+          {selectedMembers.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {selectedMembers.map(m => (
+                <span key={m.id} className="inline-flex items-center gap-0.5 text-[10px] bg-primary-600/20 text-primary-300 border border-primary-500/30 px-1.5 py-0.5 rounded-full">
+                  {m.username}
+                  <button onClick={() => removeMember(m.id)} className="text-primary-400 hover:text-red-400 ml-0.5">
+                    <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Group bulk invite */}
           {myGroups.length > 0 && (
             <select
-              value={groupId ?? ''}
-              onChange={(e) => setGroupId(e.target.value ? parseInt(e.target.value) : null)}
+              value={inviteGroupId ?? ''}
+              onChange={(e) => setInviteGroupId(e.target.value ? parseInt(e.target.value) : null)}
               className="w-full bg-surface-700 border border-surface-600 rounded text-[11px] text-gray-300 px-2 py-1.5 outline-none focus:border-primary-500/50"
             >
-              <option value="">Private (no group)</option>
-              {myGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+              <option value="">Invite group (optional)</option>
+              {myGroups.map(g => <option key={g.id} value={g.id}>{g.name} (all members)</option>)}
             </select>
           )}
+
           <p className="text-[10px] text-surface-600 px-0.5">
-            {myGroups.length > 0
-              ? groupId ? 'Group members will see this project' : 'Only you and admin can see this'
-              : 'Creates a folder with CLAUDE.md for project context'
+            {selectedMembers.length > 0 || inviteGroupId
+              ? 'Invited members will see this project'
+              : 'Only you and admin can see this project'
             }
           </p>
         </div>

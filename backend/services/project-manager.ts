@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { getAccessibleProjectIds } from './group-manager.js';
+import { getAccessibleProjectIds, addProjectMember } from './group-manager.js';
 
 const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT || path.join(process.env.HOME || '/tmp', 'workspace');
 
@@ -42,10 +42,10 @@ function rowToProject(row: any): Project {
 export function getProjects(userId?: number, role?: string): Project[] {
   const db = getDb();
 
-  // Group 필터가 활성화되면: group이 가시성을 결정 (기존 user_id 조건 대체)
   if (userId && role) {
     const accessibleIds = getAccessibleProjectIds(userId, role);
     if (accessibleIds !== null) {
+      // Non-admin: show only projects user is a member of or created
       const allRows = db.prepare(
         `SELECT * FROM projects WHERE archived = 0 ORDER BY sort_order, created_at`
       ).all() as any[];
@@ -53,10 +53,10 @@ export function getProjects(userId?: number, role?: string): Project[] {
     }
   }
 
-  // Group 없음 (기존 동작): 본인 것 + 전체 공개(user_id IS NULL)
+  // admin or no auth: show all non-archived projects
   const rows = db.prepare(
-    `SELECT * FROM projects WHERE archived = 0 AND (user_id IS NULL OR user_id = ?) ORDER BY sort_order, created_at`
-  ).all(userId ?? null) as any[];
+    `SELECT * FROM projects WHERE archived = 0 ORDER BY sort_order, created_at`
+  ).all() as any[];
   return rows.map(rowToProject);
 }
 
@@ -95,6 +95,12 @@ export function createProject(
   db.prepare(
     `INSERT INTO projects (id, name, description, root_path, color, sort_order, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)`
   ).run(id, name, opts?.description ?? null, rootPath, opts?.color ?? '#f59e0b', maxOrder + 1, userId ?? null);
+
+  // Auto-add creator as project owner
+  if (userId) {
+    addProjectMember(id, userId, 'owner');
+  }
+
   return getProject(id)!;
 }
 

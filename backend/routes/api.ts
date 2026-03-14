@@ -45,8 +45,9 @@ import {
 import {
   listGroups, createGroup, updateGroup, deleteGroup,
   addUserToGroup, removeUserFromGroup,
-  addProjectToGroup, removeProjectFromGroup,
   getUserGroups,
+  getProjectMembers, addProjectMember, removeProjectMember,
+  isProjectOwner, isProjectMember, inviteGroupToProject,
 } from '../services/group-manager.js';
 
 const UPLOAD_MAX_SIZE = parseInt(process.env.UPLOAD_MAX_SIZE || '') || 50 * 1024 * 1024; // 50MB
@@ -57,6 +58,11 @@ const DANGEROUS_EXTENSIONS = new Set([
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: UPLOAD_MAX_SIZE },
+  fileFilter: (_req, file, cb) => {
+    // Fix Korean/CJK filenames: multer decodes as Latin-1, re-decode as UTF-8
+    file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
+    cb(null, true);
+  },
 });
 
 // Uploads directory for chat file attachments (saved server-side so AI can read them)
@@ -432,20 +438,7 @@ router.delete('/admin/groups/:id/users/:uid', adminMiddleware, (req, res) => {
   res.json({ ok: true });
 });
 
-router.post('/admin/groups/:id/projects', adminMiddleware, (req, res) => {
-  const groupId = parseInt(req.params.id);
-  const { projectId } = req.body;
-  if (!projectId) return res.status(400).json({ error: 'projectId required' });
-  addProjectToGroup(projectId, groupId);
-  res.json({ ok: true });
-});
-
-router.delete('/admin/groups/:id/projects/:pid', adminMiddleware, (req, res) => {
-  const groupId = parseInt(req.params.id);
-  const projectId = req.params.pid;
-  removeProjectFromGroup(projectId, groupId);
-  res.json({ ok: true });
-});
+// (project_groups endpoints removed — use project members API instead)
 
 // ───── Sessions ─────
 router.get('/sessions', (req, res) => {
@@ -703,12 +696,15 @@ router.post('/files/upload', handleMulterUpload, async (req, res) => {
       try {
         const username = (req as any).user?.username || 'anonymous';
         await autoCommit(config.workspaceRoot, username, 'upload', savedPaths);
-      } catch {}
+      } catch (commitErr) {
+        console.warn('[upload] auto-commit failed (non-fatal):', commitErr);
+      }
     }
 
     res.json({ results });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('[upload] unexpected error:', error);
+    res.status(500).json({ error: error.message || 'Internal upload error' });
   }
 });
 
@@ -1001,14 +997,24 @@ router.get('/projects', (req, res) => {
 
 router.post('/projects', (req, res) => {
   try {
-    const { name, description, rootPath, color, groupId } = req.body;
+    const { name, description, rootPath, color, memberIds, groupId } = req.body;
     if (!name?.trim()) return res.status(400).json({ error: 'name required' });
     const userId = (req as any).user?.userId;
     const project = createProject(name.trim(), userId, { description, rootPath, color });
-    // Auto-assign to group if specified
-    if (groupId && project) {
-      addProjectToGroup(project.id, groupId);
+
+    // Add individual members
+    if (Array.isArray(memberIds)) {
+      for (const mid of memberIds) {
+        if (typeof mid === 'number' && mid !== userId) {
+          addProjectMember(project.id, mid, 'member');
+        }
+      }
     }
+    // Invite group members (snapshot copy)
+    if (groupId && typeof groupId === 'number') {
+      inviteGroupToProject(groupId, project.id);
+    }
+
     res.json(project);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -1033,6 +1039,76 @@ router.delete('/projects/:id', (req, res) => {
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ───── Project Members ─────
+
+router.get('/projects/:id/members', (req, res) => {
+  const userId = (req as any).user?.userId;
+  const role = (req as any).user?.role;
+  const projectId = req.params.id;
+  // Any member, owner, or admin can view members
+  if (role !== 'admin' && userId) {
+    const project = getProject(projectId);
+    if (!project) return res.status(404).json({ error: 'project not found' });
+    if (project.userId !== userId && !isProjectMember(projectId, userId)) {
+      return res.status(403).json({ error: 'not a member' });
+    }
+  }
+  res.json(getProjectMembers(projectId));
+});
+
+router.post('/projects/:id/members', (req, res) => {
+  const userId = (req as any).user?.userId;
+  const role = (req as any).user?.role;
+  const projectId = req.params.id;
+
+  // Only owner or admin can add members
+  if (role !== 'admin' && !isProjectOwner(projectId, userId)) {
+    return res.status(403).json({ error: 'only owner or admin can add members' });
+  }
+
+  const { userId: targetUserId, groupId: targetGroupId } = req.body;
+
+  if (targetGroupId && typeof targetGroupId === 'number') {
+    const added = inviteGroupToProject(targetGroupId, projectId);
+    return res.json({ ok: true, added });
+  }
+
+  if (!targetUserId || typeof targetUserId !== 'number') {
+    return res.status(400).json({ error: 'userId or groupId required' });
+  }
+
+  addProjectMember(projectId, targetUserId, 'member');
+  res.json({ ok: true });
+});
+
+router.delete('/projects/:id/members/:uid', (req, res) => {
+  const userId = (req as any).user?.userId;
+  const role = (req as any).user?.role;
+  const projectId = req.params.id;
+  const targetUserId = parseInt(req.params.uid);
+
+  // Only owner or admin can remove members
+  if (role !== 'admin' && !isProjectOwner(projectId, userId)) {
+    return res.status(403).json({ error: 'only owner or admin can remove members' });
+  }
+
+  const ok = removeProjectMember(projectId, targetUserId);
+  if (!ok) return res.status(400).json({ error: 'cannot remove last owner' });
+  res.json({ ok: true });
+});
+
+// ───── User Search (for member invitation) ─────
+
+router.get('/users/search', (req, res) => {
+  const q = (req.query.q as string || '').trim();
+  if (!q) return res.json([]);
+  const db = getDb();
+  const users = db.prepare(
+    `SELECT id, username FROM users WHERE disabled = 0 AND username LIKE ? ORDER BY username LIMIT 20`
+  ).all(`%${q}%`) as { id: number; username: string }[];
+  res.json(users);
 });
 
 router.post('/projects/reorder', (req, res) => {
