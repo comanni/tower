@@ -233,6 +233,51 @@ else
   info "Created .env"
 fi
 
+# ── Pi Agent (OpenRouter) ──
+echo ""
+echo "  ${BOLD}Pi Agent (Multi-Engine)${NC} — adds pay-per-token models via OpenRouter."
+echo "  Supports: Claude, GPT, Gemini, Grok, Kimi, MiniMax, and 50+ more models."
+echo "  (Requires an OpenRouter API key — https://openrouter.ai/keys)"
+echo ""
+read -p "  Enable Pi Agent? (y/N) " -n 1 -r PI_CHOICE
+echo
+
+if [[ "$PI_CHOICE" =~ ^[Yy]$ ]]; then
+  # Add PI_ENABLED if not already set
+  if ! grep -q "^PI_ENABLED=" .env 2>/dev/null; then
+    echo "" >> .env
+    echo "# ── Pi Agent (Multi-Engine) ──" >> .env
+    echo "PI_ENABLED=true" >> .env
+  else
+    sed_inplace "s/^PI_ENABLED=.*/PI_ENABLED=true/" .env
+  fi
+
+  read -p "  OpenRouter API Key (sk-or-v1-...): " -r OR_KEY_INPUT
+  if [[ -n "$OR_KEY_INPUT" && "$OR_KEY_INPUT" == sk-or-* ]]; then
+    if ! grep -q "^OPENROUTER_API_KEY=" .env 2>/dev/null; then
+      echo "OPENROUTER_API_KEY=$OR_KEY_INPUT" >> .env
+    else
+      sed_inplace "s/^OPENROUTER_API_KEY=.*/OPENROUTER_API_KEY=$OR_KEY_INPUT/" .env
+    fi
+    info "Pi Agent enabled with OpenRouter key"
+  else
+    if [ -n "$OR_KEY_INPUT" ]; then
+      warn "Key format unexpected (expected sk-or-v1-...). Added anyway."
+      if ! grep -q "^OPENROUTER_API_KEY=" .env 2>/dev/null; then
+        echo "OPENROUTER_API_KEY=$OR_KEY_INPUT" >> .env
+      fi
+    else
+      warn "No OpenRouter key provided. Set OPENROUTER_API_KEY in .env later."
+    fi
+  fi
+
+  echo "  Pi models configured in: backend/engines/pi-models.json"
+  echo "  Edit that file to add/remove models (no code changes needed)."
+else
+  warn "Skipped Pi Agent — only Claude engine will be available"
+  echo "  To enable later: set PI_ENABLED=true and OPENROUTER_API_KEY in .env"
+fi
+
 # If user provided API key but .env already existed, add it
 if [ -n "${ANTHROPIC_API_KEY_PENDING:-}" ] && ! grep -q "^ANTHROPIC_API_KEY=" .env 2>/dev/null; then
   echo "" >> .env

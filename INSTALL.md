@@ -9,6 +9,7 @@
 | **Git** | any | `git --version` |
 | **Claude Code CLI** | latest | `claude --version` |
 | **Anthropic API** | Max plan or API key | `claude auth status` |
+| **OpenRouter API key** *(optional)* | — | [openrouter.ai/keys](https://openrouter.ai/keys) |
 | **PostgreSQL** *(optional)* | 18+ with pgvector | `psql --version` |
 
 > **Note**: `better-sqlite3` requires native build tools. On Ubuntu: `sudo apt install -y build-essential python3`
@@ -108,6 +109,40 @@ claude auth status
 
 This copies the OAuth tokens from a machine where Claude is already authenticated. Works instantly, no browser needed.
 
+### 3b. Pi Agent Engine (Optional — Multi-Engine)
+
+Tower supports multiple AI engines simultaneously. Pi Agent uses the [Pi coding agent SDK](https://github.com/nicobailon/pi-coding-agent) via OpenRouter, giving you access to 50+ models on a pay-per-token basis.
+
+```bash
+# Add to .env:
+PI_ENABLED=true
+OPENROUTER_API_KEY=sk-or-v1-your-key-here
+
+# Optional: make Pi the default engine for new sessions
+# DEFAULT_ENGINE=pi
+
+# Optional: for OpenAI models via Pi
+# OPENAI_API_KEY=sk-...
+```
+
+Get your OpenRouter key at: https://openrouter.ai/keys
+
+#### Configure Available Models
+
+Edit `backend/engines/pi-models.json` to add/remove models — no code changes needed:
+
+```json
+{
+  "models": [
+    { "provider": "openrouter", "modelId": "anthropic/claude-sonnet-4.6", "name": "Sonnet 4.6", "badge": "OR" },
+    { "provider": "openrouter", "modelId": "google/gemini-3.1-pro-preview", "name": "Gemini 3.1 Pro", "badge": "OR" },
+    { "provider": "openrouter", "modelId": "x-ai/grok-4.1-fast", "name": "Grok 4.1 Fast", "badge": "OR" }
+  ]
+}
+```
+
+> **How it works**: Claude engine uses your Anthropic Max subscription (flat $200/mo). Pi engine uses OpenRouter (pay per token). You can run both side by side — each session picks its engine at creation time. Users can switch models mid-conversation in Pi sessions.
+
 ### 4. Clone & Install
 
 ```bash
@@ -201,6 +236,13 @@ After login, check the bottom-left status bar:
 Type "hello" in the chat box and press Enter.
 - Claude should respond within a few seconds
 - If you see an error, check that Claude is authenticated: `claude auth status`
+
+### Step 4b: Test Pi Engine (if PI_ENABLED=true)
+
+- Click the model selector in the chat header
+- You should see OpenRouter models (e.g., "Sonnet 4.6 [OR]", "Gemini 3.1 Pro [OR]")
+- Create a new session with a Pi model and send "hello"
+- The response should stream, with cost/token info shown after each turn
 
 ### Step 5: Check the File Tree
 
@@ -385,6 +427,10 @@ Copy `.env.example` to `.env` and edit:
 | `DB_PATH` | `data/tower.db` | SQLite database path |
 | `DATABASE_URL` | *(none)* | PostgreSQL connection string (chat rooms) |
 | `CLAUDE_PATH` | *(auto-detect)* | Claude CLI path override |
+| `PI_ENABLED` | `false` | Enable Pi Agent engine |
+| `DEFAULT_ENGINE` | `claude` | Default engine for new sessions (`claude` or `pi`) |
+| `OPENROUTER_API_KEY` | *(none)* | OpenRouter API key (required for Pi engine) |
+| `OPENAI_API_KEY` | *(none)* | OpenAI API key (optional, for Pi with OpenAI models) |
 | `PUBLIC_URL` | *(none)* | Canonical domain for share links |
 
 ---
@@ -492,6 +538,33 @@ ls ~/workspace/projects/my-project/CLAUDE.md
 echo "# My Project\n\nDescribe your project here." > ~/workspace/projects/my-project/CLAUDE.md
 ```
 
+### Pi models not showing in session
+
+```bash
+# Check PI_ENABLED is set
+grep PI_ENABLED .env
+# → PI_ENABLED=true
+
+# Check OpenRouter key
+grep OPENROUTER_API_KEY .env
+# → Should have a value starting with sk-or-v1-
+
+# Verify pi-models.json is valid
+node -e "console.log(JSON.parse(require('fs').readFileSync('backend/engines/pi-models.json','utf8')))"
+
+# Restart server after changing .env
+```
+
+### OpenRouter 401 / Pi session fails
+
+```bash
+# Test your OpenRouter key directly
+curl https://openrouter.ai/api/v1/models \
+  -H "Authorization: Bearer $(grep OPENROUTER_API_KEY .env | cut -d= -f2)" \
+  | head -c 200
+# → Should return JSON with model list
+```
+
 ### "Claude not found" or sessions fail
 
 ```bash
@@ -563,6 +636,7 @@ Before going live, verify:
 - [ ] Admin password is strong
 - [ ] `NO_AUTH` is **not** set to `true`
 - [ ] Claude CLI is authenticated (`claude auth status`)
+- [ ] `OPENROUTER_API_KEY` is not committed to git (if using Pi engine)
 - [ ] `WORKSPACE_ROOT` points to the intended directory
 - [ ] Non-admin users have `allowed_path` set appropriately
 - [ ] Server is behind HTTPS (Cloudflare, nginx, or tunnel)
@@ -595,7 +669,7 @@ tower/
 |-------|-----------|
 | **Frontend** | React 18, Vite 6, Tailwind CSS 4, Zustand 5, CodeMirror |
 | **Backend** | Express, WebSocket (ws), tsx watch |
-| **AI** | `@anthropic-ai/claude-agent-sdk` (Claude Code SDK) |
+| **AI** | Multi-engine: `@anthropic-ai/claude-agent-sdk` + `@mariozechner/pi-coding-agent` (OpenRouter) |
 | **DB** | SQLite (better-sqlite3), WAL mode |
 | **Auth** | JWT (bcryptjs + jsonwebtoken) |
 | **Process** | PM2 (production), concurrently (dev) |
