@@ -14,6 +14,7 @@
 
 > **Note**: `better-sqlite3` requires native build tools. On Ubuntu: `sudo apt install -y build-essential python3`
 >
+> **Memory**: Development mode (`npm run dev`) needs **4GB+ RAM** (Vite HMR + tsx watch). Production mode (`npm run build` + `./start.sh`) runs fine on **2GB+**. On small VMs (e.g. Azure B2s), use production mode.
 > **Note**: PostgreSQL is only needed for the chat rooms feature. Without it, all other features work normally via SQLite.
 
 ---
