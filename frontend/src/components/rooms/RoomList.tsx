@@ -32,24 +32,25 @@ export function RoomList({ onSelectRoom }: RoomListProps) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Create Room button */}
-      <div className="p-3">
+      {/* Header */}
+      <div className="px-4 pt-3 pb-2 flex items-center justify-between">
+        <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Channels</span>
         <button
           onClick={() => setCreateOpen(true)}
-          className="w-full py-2 px-4 bg-primary-600 hover:bg-primary-500 rounded-lg text-[13px] font-semibold text-white shadow-sm shadow-primary-900/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2 ring-1 ring-white/10"
+          className="w-5 h-5 flex items-center justify-center rounded hover:bg-surface-700 text-gray-500 hover:text-gray-300 transition-colors"
+          title="Create Channel"
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          Create Room
         </button>
       </div>
 
-      {/* Room list */}
-      <div className="flex-1 overflow-y-auto px-3 space-y-0.5">
+      {/* Channel list */}
+      <div className="flex-1 overflow-y-auto px-2 space-y-px">
         {rooms.length === 0 ? (
-          <div className="text-center py-8">
-            <p className="text-[12px] text-gray-500">No rooms yet</p>
+          <div className="text-center py-8 px-2">
+            <p className="text-[12px] text-gray-500">No channels yet</p>
             <p className="text-[11px] text-gray-600 mt-1">Create one to get started</p>
           </div>
         ) : (
@@ -58,42 +59,39 @@ export function RoomList({ onSelectRoom }: RoomListProps) {
             const lastMessages = messagesByRoom[room.id];
             const lastMsg = lastMessages?.[lastMessages.length - 1];
             const isActive = room.id === activeRoomId;
+            const hasUnread = unread > 0;
 
             return (
               <button
                 key={room.id}
                 onClick={() => onSelectRoom(room.id)}
-                className={`w-full text-left px-3 py-2.5 rounded-lg transition-colors ${
+                className={`w-full text-left px-2 py-1 rounded transition-colors group ${
                   isActive
-                    ? 'bg-surface-800 border border-surface-700'
-                    : 'hover:bg-surface-800/50 border border-transparent'
+                    ? 'bg-primary-600/20 text-gray-100'
+                    : 'hover:bg-surface-800/60 text-gray-400'
                 }`}
               >
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-surface-700 border border-surface-600 flex items-center justify-center shrink-0">
-                    <span className="text-[12px] font-bold text-gray-300">
-                      {room.name[0]?.toUpperCase() || '#'}
+                <div className="flex items-center justify-between gap-1">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className={`text-[14px] shrink-0 ${isActive ? 'text-gray-300' : 'text-gray-600'}`}>#</span>
+                    <span className={`text-[13px] truncate ${
+                      isActive ? 'text-gray-100' : hasUnread ? 'text-gray-200 font-semibold' : 'text-gray-400'
+                    }`}>
+                      {room.name}
                     </span>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <span className={`text-[13px] font-medium truncate ${isActive ? 'text-gray-100' : 'text-gray-300'}`}>
-                        {room.name}
-                      </span>
-                      {unread > 0 && (
-                        <span className="ml-2 px-1.5 py-0.5 bg-primary-600 text-[10px] font-bold text-white rounded-full min-w-[18px] text-center">
-                          {unread > 99 ? '99+' : unread}
-                        </span>
-                      )}
-                    </div>
-                    {lastMsg && (
-                      <p className="text-[11px] text-gray-500 truncate mt-0.5">
-                        {lastMsg.senderName ? `${lastMsg.senderName}: ` : ''}
-                        {lastMsg.content.slice(0, 60)}
-                      </p>
-                    )}
-                  </div>
+                  {hasUnread && (
+                    <span className="ml-1 px-1.5 py-0.5 bg-primary-600 text-[10px] font-bold text-white rounded-full min-w-[18px] text-center shrink-0">
+                      {unread > 99 ? '99+' : unread}
+                    </span>
+                  )}
                 </div>
+                {lastMsg && (
+                  <p className={`text-[11px] truncate mt-0.5 pl-5 ${isActive ? 'text-gray-400' : 'text-gray-600'}`}>
+                    {lastMsg.senderName ? `${lastMsg.senderName}: ` : ''}
+                    {lastMsg.content.slice(0, 60)}
+                  </p>
+                )}
               </button>
             );
           })

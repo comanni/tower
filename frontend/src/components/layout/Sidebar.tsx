@@ -48,6 +48,10 @@ export function Sidebar({
   const setSidebarTab = useSessionStore((s) => s.setSidebarTab);
   const searchQuery = useSessionStore((s) => s.searchQuery);
   const setSearchQuery = useSessionStore((s) => s.setSearchQuery);
+  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
+  const [ungroupedCollapsed, setUngroupedCollapsed] = useState(false);
+  const [ungroupedExpanded, setUngroupedExpanded] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const tree = useFileStore((s) => s.tree);
   const treeRoot = useFileStore((s) => s.treeRoot);
@@ -271,19 +275,6 @@ export function Sidebar({
         </div>
       )}
 
-      {/* New session button */}
-      <div className="p-4 border-b border-surface-800/50">
-        <button
-          onClick={() => onNewSession()}
-          className="w-full py-2.5 px-4 bg-primary-600 hover:bg-primary-500 rounded-lg text-[13px] font-semibold text-white shadow-sm shadow-primary-900/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2 ring-1 ring-white/10"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          New Chat
-        </button>
-      </div>
-
       {/* Tab switcher — 3 tabs (Pins & History moved to footer) */}
       {(sidebarTab === 'pins' || sidebarTab === 'history') ? (
         <div className="flex items-center border-b border-surface-800/50 px-3 py-2 gap-2">
@@ -318,25 +309,41 @@ export function Sidebar({
       )}
 
       {/* Tab content */}
-      <div className="flex-1 overflow-y-auto pt-2">
+      <div className="flex-1 overflow-y-auto">
         {sidebarTab === 'sessions' ? (
           <div className="px-3">
-            {/* Search + New Project */}
-            <div className="flex items-center gap-1.5 mb-2">
-              <div className="relative flex-1">
-                <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-surface-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            {/* New Chat + New Project buttons */}
+            <div className="pt-3 pb-2 flex items-center gap-1.5">
+              <button
+                onClick={() => onNewSession()}
+                className="flex-1 py-2 px-4 bg-surface-800 hover:bg-surface-700 border border-surface-700 rounded-lg text-[13px] font-medium text-gray-300 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
-                <input
-                  type="text"
-                  placeholder="Search..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-surface-800 border border-surface-700 rounded-md text-[12px] text-gray-300 pl-8 pr-3 py-1.5 placeholder-surface-700 outline-none focus:border-primary-500/50 transition-colors"
-                />
-              </div>
+                New Chat
+              </button>
               <NewProjectButton />
             </div>
+            {/* Search (collapsible) */}
+            {(searchQuery.trim().length > 0 || isSearchExpanded) && (
+              <div className="mb-2">
+                <div className="relative">
+                  <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-surface-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    placeholder="Search..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onBlur={() => { if (!searchQuery.trim()) setIsSearchExpanded(false); }}
+                    className="w-full bg-surface-800 border border-surface-700 rounded-md text-[12px] text-gray-300 pl-8 pr-3 py-1.5 placeholder-surface-700 outline-none focus:border-primary-500/50 transition-colors"
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Grouped or flat session list */}
             {groupedSessions && !isSearching ? (
@@ -359,31 +366,51 @@ export function Sidebar({
                     projects={projects}
                   />
                 ))}
-                {/* Ungrouped sessions — also a drop zone to remove from project */}
+                {/* Ungrouped sessions — collapsible, shows latest 5 */}
                 {(groupedSessions.ungrouped.length > 0 || groupedSessions.groups.length > 0) && (
                   <UngroupedDropZone onMoveSession={handleMoveSession} hasGroups={groupedSessions.groups.length > 0} hasUngrouped={groupedSessions.ungrouped.length > 0}>
-                    {groupedSessions.groups.length > 0 && (
-                      <div className="flex items-center gap-2 px-1 py-1 mb-1">
+                    {groupedSessions.groups.length > 0 && groupedSessions.ungrouped.length > 0 && (
+                      <button
+                        onClick={() => setUngroupedCollapsed(!ungroupedCollapsed)}
+                        className="w-full flex items-center gap-2 px-1 py-1.5 mb-1 group"
+                      >
+                        <svg className={`w-3 h-3 text-surface-600 transition-transform ${ungroupedCollapsed ? '' : 'rotate-90'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                        <span className="text-[10px] text-surface-600 uppercase tracking-wider font-medium shrink-0">
+                          Ungrouped ({groupedSessions.ungrouped.length})
+                        </span>
                         <div className="flex-1 h-px bg-surface-800" />
-                        <span className="text-[10px] text-surface-600 uppercase tracking-wider font-medium shrink-0">Ungrouped</span>
-                        <div className="flex-1 h-px bg-surface-800" />
+                      </button>
+                    )}
+                    {!ungroupedCollapsed && (
+                      <div className="space-y-0.5">
+                        {(ungroupedExpanded
+                          ? groupedSessions.ungrouped
+                          : groupedSessions.ungrouped.slice(0, PROJECT_PREVIEW_COUNT)
+                        ).map((session) => (
+                          <SessionItem
+                            key={session.id}
+                            session={session}
+                            isActive={session.id === activeSessionId}
+                            onSelect={onSelectSession}
+                            onDelete={onDeleteSession}
+                            onRename={onRenameSession}
+                            onToggleFavorite={onToggleFavorite}
+                            onMoveToProject={handleMoveSession}
+                            projects={projects}
+                          />
+                        ))}
+                        {groupedSessions.ungrouped.length > PROJECT_PREVIEW_COUNT && (
+                          <button
+                            onClick={() => setUngroupedExpanded(!ungroupedExpanded)}
+                            className="w-full text-center py-1 text-[11px] text-surface-600 hover:text-gray-400 transition-colors"
+                          >
+                            {ungroupedExpanded ? 'Show less' : `Show all ${groupedSessions.ungrouped.length}`}
+                          </button>
+                        )}
                       </div>
                     )}
-                    <div className="space-y-0.5">
-                      {groupedSessions.ungrouped.map((session) => (
-                        <SessionItem
-                          key={session.id}
-                          session={session}
-                          isActive={session.id === activeSessionId}
-                          onSelect={onSelectSession}
-                          onDelete={onDeleteSession}
-                          onRename={onRenameSession}
-                          onToggleFavorite={onToggleFavorite}
-                          onMoveToProject={handleMoveSession}
-                          projects={projects}
-                        />
-                      ))}
-                    </div>
                   </UngroupedDropZone>
                 )}
                 {filteredSessions.length === 0 && (
@@ -538,8 +565,27 @@ export function Sidebar({
       </div>
 
       <div className="border-t border-surface-800/50">
-        {/* Pins & History quick-access buttons */}
+        {/* Search, Pins & History quick-access buttons */}
         <div className="flex items-center gap-1 px-4 pt-3 pb-1">
+          <button
+            onClick={() => {
+              setSidebarTab('sessions');
+              useSessionStore.getState().setActiveView('chat');
+              setIsSearchExpanded(true);
+              setTimeout(() => searchInputRef.current?.focus(), 100);
+            }}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-colors ${
+              isSearchExpanded
+                ? 'bg-primary-600/15 text-primary-400'
+                : 'text-surface-600 hover:text-gray-300 hover:bg-surface-800'
+            }`}
+            title="Search"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            Search
+          </button>
           <button
             onClick={() => setSidebarTab(sidebarTab === 'pins' ? 'sessions' : 'pins')}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-colors ${
