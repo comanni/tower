@@ -201,9 +201,12 @@ body {
   line-height: 1.6;
 }
 
-/* Code font family */
+/* Code font family — fixed-width guaranteed */
 code, pre, .font-mono {
   font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace !important;
+  font-variant-ligatures: none !important;           /* 리가처 비활성 — ASCII art 폭 보존 */
+  font-feature-settings: 'liga' 0, 'calt' 0 !important; /* OT 리가처/컨텍스트 대체 끔 */
+  letter-spacing: 0 !important;                      /* 자간 보정 차단 */
 }
 
 /* ─── Scrollbar ─── */
@@ -259,6 +262,9 @@ code, pre, .font-mono {
   margin: 0.75em 0;
   font-size: 0.8125rem; /* 13px */
   line-height: 1.65;
+  tab-size: 4;                                       /* 탭 폭 고정 */
+  -moz-tab-size: 4;
+  white-space: pre;                                  /* 공백/줄바꿈 그대로 보존 */
 }
 
 .prose pre code {

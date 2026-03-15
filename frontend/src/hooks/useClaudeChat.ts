@@ -327,6 +327,7 @@ export function useClaudeChat() {
         // Admin changed model config — update stores
         if (data.models) useModelStore.getState().setAvailableModels(data.models);
         if (data.piModels) useModelStore.getState().setPiModels(data.piModels);
+        if (data.defaults) useModelStore.getState().setDefaults(data.defaults);
         break;
       }
 
@@ -840,6 +841,24 @@ export function useClaudeChat() {
         if (useRoomStore.getState().activeRoomId !== roomId) {
           useRoomStore.getState().incrementUnread(roomId);
         }
+        break;
+      }
+
+      case 'room_ai_stream': {
+        // @ai streaming chunk — update message content in real time
+        const { roomId, messageId: streamMsgId, content: streamContent } = data;
+        useRoomStore.getState().updateMessage(roomId, streamMsgId, { content: streamContent });
+        break;
+      }
+
+      case 'room_ai_stream_done': {
+        // @ai streaming complete — replace placeholder with final DB message
+        const { roomId, messageId: placeholderId, finalMessageId, content: finalContent } = data;
+        useRoomStore.getState().updateMessage(roomId, placeholderId, {
+          id: finalMessageId,
+          content: finalContent,
+          metadata: { streaming: false },
+        });
         break;
       }
 

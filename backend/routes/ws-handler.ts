@@ -245,13 +245,13 @@ export function setupWebSocket(server: Server) {
     // ── Protocol-level ping (binary frame) ──────────────────────────────
     // Cloudflare and mobile networks need WS protocol pings to keep alive.
     // App-level JSON ping alone isn't enough — Cloudflare may still timeout.
-    let isAlive = true;
-    ws.on('pong', () => { isAlive = true; });       // browser auto-replies pong
+    let missedPongs = 0;
+    ws.on('pong', () => { missedPongs = 0; });       // browser auto-replies pong
     const pingInterval = setInterval(() => {
-      if (!isAlive) { ws.terminate(); return; }      // dead connection → force close
-      isAlive = false;
-      ws.ping();                                      // binary ping frame
-    }, 25_000);                                       // 25s < Cloudflare's ~100s timeout
+      missedPongs++;
+      if (missedPongs >= 3) { ws.terminate(); return; }  // 3 missed pongs → force close
+      ws.ping();                                          // binary ping frame
+    }, 30_000);                                           // 30s interval, tolerates ~90s outage
     ws.on('close', () => clearInterval(pingInterval));
 
     ws.on('message', async (raw) => {
@@ -858,8 +858,9 @@ async function handleRoomMessage(client: WsClient, data: { roomId: string; conte
       }
     }
 
-    // Check for @ai mention
-    if (data.mentions?.includes('ai') || data.content.match(/(^|[\s])@ai\b/i)) {
+    // Check for @ai or @task mention
+    const mentionRegex = /(^|[\s])@(ai|task)\b/i;
+    if (data.mentions?.includes('ai') || data.mentions?.includes('task') || mentionRegex.test(data.content)) {
       const { parseAiMention, checkRateLimit, checkConcurrentLimit, checkAiCallPermission, recordAiCall } = await import('../services/ai-dispatch.js');
       const mention = parseAiMention(data.content);
 
@@ -886,95 +887,108 @@ async function handleRoomMessage(client: WsClient, data: { roomId: string; conte
           return;
         }
 
-        // Rate limit check
+        // Rate limit check (shared between @ai and @task)
         const rateResult = checkRateLimit(client.userId, data.roomId);
         if (!rateResult.allowed) {
           send(client.ws, { type: 'error', message: `Rate limit exceeded (${rateResult.reason}). Retry after ${Math.ceil((rateResult.retryAfterMs || 0) / 1000)}s` });
           return;
         }
 
-        // Concurrent limit check
-        const concResult = checkConcurrentLimit(data.roomId);
-        if (!concResult.allowed) {
-          send(client.ws, { type: 'error', message: `Room has ${concResult.runningCount}/${concResult.limit} AI tasks running. Please wait.` });
-          return;
-        }
-
-        // Record the call for rate limiting
         recordAiCall(client.userId, data.roomId);
 
-        // Create task via task-manager
-        const { createTask } = await import('../services/task-manager.js');
-        const taskTitle = mention.prompt.slice(0, 80) || '@ai task';
-
-        // Determine CWD from room's project (if any)
-        const { getRoom: fetchRoom } = await import('../services/room-manager.js');
-        const room = await fetchRoom(data.roomId);
-        const taskCwd = room?.projectId ? config.defaultCwd : config.defaultCwd; // TODO: resolve project root_path
-
-        const task = createTask(
-          taskTitle,
-          mention.prompt,
-          taskCwd,
-          client.userId,
-          undefined, undefined, undefined, undefined, undefined,
-          { roomId: data.roomId, triggeredBy: client.userId, roomMessageId: messageId },
-        );
-
-        // Post task_ref message to room
-        const taskRefMsg = await sendMessage(
-          data.roomId,
-          null,
-          `Task "${taskTitle}" registered`,
-          'ai_task_ref',
-          { task_id: task.id, status: 'todo' },
-          task.id,
-        );
-        const taskRefId = taskRefMsg.id;
-
-        broadcastToRoom(data.roomId, {
-          type: 'room_message',
-          roomId: data.roomId,
-          message: {
-            id: taskRefId,
+        if (mention.mentionType === 'ai') {
+          // ─── @ai: Quick reply (no task creation) ───
+          const { getRoom: fetchRoom } = await import('../services/room-manager.js');
+          const room = await fetchRoom(data.roomId);
+          const { handleAiQuickReply } = await import('../services/ai-quick-reply.js');
+          handleAiQuickReply({
             roomId: data.roomId,
-            senderId: null,
-            msgType: 'ai_task_ref',
-            content: `Task "${taskTitle}" registered`,
-            metadata: { task_id: task.id, status: 'todo' },
-            createdAt: new Date().toISOString(),
-          },
-        });
-
-        // Spawn task (fire-and-forget) — room tasks use acceptEdits (capped in task-runner)
-        // Spawn with room-aware broadcast
-        spawnTask(task.id, (type, payload) => {
-          broadcastToAll({ type, ...payload });
-          // Also notify room when task completes
-          if (type === 'task_update' && (payload.status === 'done' || payload.status === 'failed')) {
-            broadcastToRoom(data.roomId, {
-              type: 'room_ai_status',
-              roomId: data.roomId,
-              taskId: task.id,
-              status: payload.status,
-            });
+            roomName: room?.name || data.roomId,
+            prompt: mention.prompt,
+            userId: client.userId,
+            username: client.username || 'unknown',
+            messageId,
+            broadcastToRoom,
+          }).catch(err => {
+            console.error('[ws] AI quick reply failed:', err.message);
+          });
+        } else {
+          // ─── @task: Full task execution ───
+          const concResult = checkConcurrentLimit(data.roomId);
+          if (!concResult.allowed) {
+            send(client.ws, { type: 'error', message: `Room has ${concResult.runningCount}/${concResult.limit} AI tasks running. Please wait.` });
+            return;
           }
-        }, client.userId, client.userRole, client.allowedPath).catch(err => {
-          console.error(`[ws] Room task spawn failed:`, err.message);
+
+          const { createTask } = await import('../services/task-manager.js');
+          const taskTitle = mention.prompt.slice(0, 80) || '@task';
+
+          const { getRoom: fetchRoom } = await import('../services/room-manager.js');
+          const room = await fetchRoom(data.roomId);
+          const taskCwd = room?.projectId ? config.defaultCwd : config.defaultCwd; // TODO: resolve project root_path
+
+          const task = createTask(
+            taskTitle,
+            mention.prompt,
+            taskCwd,
+            client.userId,
+            undefined, undefined, undefined, undefined, undefined,
+            { roomId: data.roomId, triggeredBy: client.userId, roomMessageId: messageId },
+          );
+
+          // Post task_ref message to room
+          const taskRefMsg = await sendMessage(
+            data.roomId,
+            null,
+            `Task "${taskTitle}" registered`,
+            'ai_task_ref',
+            { task_id: task.id, status: 'todo' },
+            task.id,
+          );
+
           broadcastToRoom(data.roomId, {
             type: 'room_message',
             roomId: data.roomId,
             message: {
-              id: `err-${Date.now()}`,
+              id: taskRefMsg.id,
               roomId: data.roomId,
               senderId: null,
-              msgType: 'ai_error',
-              content: `Task failed to start: ${err.message}`,
-              metadata: { task_id: task.id, error: err.message },
+              msgType: 'ai_task_ref',
+              content: `Task "${taskTitle}" registered`,
+              metadata: { task_id: task.id, status: 'todo' },
               createdAt: new Date().toISOString(),
             },
           });
-        });
+
+          // Spawn task (fire-and-forget) — room tasks use acceptEdits
+          spawnTask(task.id, (type, payload) => {
+            broadcastToAll({ type, ...payload });
+            // Also notify room when task completes
+            if (type === 'task_update' && (payload.status === 'done' || payload.status === 'failed')) {
+              broadcastToRoom(data.roomId, {
+                type: 'room_ai_status',
+                roomId: data.roomId,
+                taskId: task.id,
+                status: payload.status,
+              });
+            }
+          }, client.userId, client.userRole, client.allowedPath).catch(err => {
+            console.error(`[ws] Room task spawn failed:`, err.message);
+            broadcastToRoom(data.roomId, {
+              type: 'room_message',
+              roomId: data.roomId,
+              message: {
+                id: `err-${Date.now()}`,
+                roomId: data.roomId,
+                senderId: null,
+                msgType: 'ai_error',
+                content: `Task failed to start: ${err.message}`,
+                metadata: { task_id: task.id, error: err.message },
+                createdAt: new Date().toISOString(),
+              },
+            });
+          });
+        }
       }
     }
   } catch (err: any) {
