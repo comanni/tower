@@ -20,7 +20,7 @@ interface AdminPanelProps {
 }
 
 export function AdminPanel({ open, onClose, token }: AdminPanelProps) {
-  const [tab, setTab] = useState<'users' | 'groups' | 'prompts' | 'system'>('users');
+  const [tab, setTab] = useState<'users' | 'groups' | 'models' | 'prompts' | 'system'>('users');
 
   if (!open) return null;
 
@@ -57,6 +57,7 @@ export function AdminPanel({ open, onClose, token }: AdminPanelProps) {
         <div className="flex border-b border-surface-800 px-6 shrink-0">
           <button className={tabClass('users')} onClick={() => setTab('users')}>Users</button>
           <button className={tabClass('groups')} onClick={() => setTab('groups')}>Groups</button>
+          <button className={tabClass('models')} onClick={() => setTab('models')}>Models</button>
           <button className={tabClass('prompts')} onClick={() => setTab('prompts')}>System Prompt</button>
           <button className={tabClass('system')} onClick={() => setTab('system')}>System</button>
         </div>
@@ -65,6 +66,7 @@ export function AdminPanel({ open, onClose, token }: AdminPanelProps) {
         <div className="flex-1 overflow-y-auto p-6">
           {tab === 'users' && <UserManagement token={token} />}
           {tab === 'groups' && <GroupManagement token={token} />}
+          {tab === 'models' && <ModelManagement token={token} />}
           {tab === 'prompts' && <SystemPromptEditor token={token} />}
           {tab === 'system' && <SystemInfo />}
         </div>
@@ -1008,6 +1010,179 @@ function SystemInfo() {
           <InfoRow label="Version" value={serverConfig?.version || '-'} />
         </div>
       </div>
+    </div>
+  );
+}
+
+// ───── Model Management ─────
+
+interface ClaudeModelEntry { id: string; name: string; badge: string; enabled: boolean }
+interface PiModelEntry { provider: string; modelId: string; name: string; badge: string; enabled: boolean }
+interface ModelsData { claude: ClaudeModelEntry[]; pi: PiModelEntry[] }
+
+function ModelManagement({ token }: { token?: string | null }) {
+  const [models, setModels] = useState<ModelsData | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [addingPi, setAddingPi] = useState(false);
+  const [newPi, setNewPi] = useState({ provider: 'openrouter', modelId: '', name: '', badge: 'OR' });
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const fetchModels = useCallback(() => {
+    fetch(`${API_BASE}/admin/models`, { headers })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => d && setModels(d))
+      .catch(() => {});
+  }, [token]);
+
+  useEffect(() => { fetchModels(); }, [fetchModels]);
+
+  const save = async (updated: ModelsData) => {
+    setSaving(true);
+    try {
+      const res = await fetch(`${API_BASE}/admin/models`, { method: 'PUT', headers, body: JSON.stringify(updated) });
+      if (res.ok) {
+        setModels(updated);
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleClaude = (idx: number) => {
+    if (!models) return;
+    const updated = { ...models, claude: models.claude.map((m, i) => i === idx ? { ...m, enabled: !m.enabled } : m) };
+    save(updated);
+  };
+
+  const togglePi = (idx: number) => {
+    if (!models) return;
+    const updated = { ...models, pi: models.pi.map((m, i) => i === idx ? { ...m, enabled: !m.enabled } : m) };
+    save(updated);
+  };
+
+  const deletePi = (idx: number) => {
+    if (!models) return;
+    const updated = { ...models, pi: models.pi.filter((_, i) => i !== idx) };
+    save(updated);
+  };
+
+  const addPi = () => {
+    if (!models || !newPi.modelId || !newPi.name) return;
+    const entry: PiModelEntry = { ...newPi, enabled: true };
+    const updated = { ...models, pi: [...models.pi, entry] };
+    save(updated);
+    setNewPi({ provider: 'openrouter', modelId: '', name: '', badge: 'OR' });
+    setAddingPi(false);
+  };
+
+  if (!models) return <div className="text-gray-500 text-sm py-8 text-center">Loading...</div>;
+
+  const rowClass = 'flex items-center gap-3 px-4 py-2.5 border-b border-surface-800 last:border-0';
+  const toggleClass = (on: boolean) =>
+    `w-9 h-5 rounded-full relative cursor-pointer transition-colors ${on ? 'bg-primary-500' : 'bg-surface-600'}`;
+  const dotClass = (on: boolean) =>
+    `absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${on ? 'left-4' : 'left-0.5'}`;
+
+  return (
+    <div className="space-y-6">
+      {/* Claude Models */}
+      <div>
+        <h3 className="text-[13px] font-semibold text-gray-300 uppercase tracking-wider mb-2">Claude (MAX)</h3>
+        <div className="bg-surface-800/50 rounded-lg border border-surface-700">
+          {models.claude.map((m, i) => (
+            <div key={m.id} className={rowClass}>
+              <div className={toggleClass(m.enabled)} onClick={() => toggleClaude(i)}>
+                <div className={dotClass(m.enabled)} />
+              </div>
+              <span className="text-[13px] text-gray-200 flex-1">{m.name}</span>
+              <span className="text-[11px] text-gray-500 font-mono">{m.id}</span>
+              <span className="text-[11px] px-1.5 py-0.5 rounded bg-surface-700 text-gray-400">{m.badge}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Pi Models */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-[13px] font-semibold text-gray-300 uppercase tracking-wider">Pi (OpenRouter)</h3>
+          <button
+            onClick={() => setAddingPi(!addingPi)}
+            className="text-[12px] text-primary-400 hover:text-primary-300 transition-colors"
+          >
+            {addingPi ? 'Cancel' : '+ Add Model'}
+          </button>
+        </div>
+
+        {addingPi && (
+          <div className="bg-surface-800/50 rounded-lg border border-surface-700 p-4 mb-3 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <input
+                placeholder="Model ID (e.g. x-ai/grok-4.1)"
+                value={newPi.modelId}
+                onChange={e => setNewPi({ ...newPi, modelId: e.target.value })}
+                className="bg-surface-700 border border-surface-600 rounded px-3 py-1.5 text-[13px] text-gray-200 placeholder:text-gray-600"
+              />
+              <input
+                placeholder="Display Name"
+                value={newPi.name}
+                onChange={e => setNewPi({ ...newPi, name: e.target.value })}
+                className="bg-surface-700 border border-surface-600 rounded px-3 py-1.5 text-[13px] text-gray-200 placeholder:text-gray-600"
+              />
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <input
+                placeholder="Provider"
+                value={newPi.provider}
+                onChange={e => setNewPi({ ...newPi, provider: e.target.value })}
+                className="bg-surface-700 border border-surface-600 rounded px-3 py-1.5 text-[13px] text-gray-200 placeholder:text-gray-600"
+              />
+              <input
+                placeholder="Badge (e.g. OR)"
+                value={newPi.badge}
+                onChange={e => setNewPi({ ...newPi, badge: e.target.value })}
+                className="bg-surface-700 border border-surface-600 rounded px-3 py-1.5 text-[13px] text-gray-200 placeholder:text-gray-600"
+              />
+              <button
+                onClick={addPi}
+                disabled={!newPi.modelId || !newPi.name}
+                className="bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white text-[13px] rounded px-3 py-1.5 transition-colors"
+              >
+                Add
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="bg-surface-800/50 rounded-lg border border-surface-700">
+          {models.pi.length === 0 && (
+            <div className="text-gray-500 text-[13px] py-4 text-center">No Pi models configured</div>
+          )}
+          {models.pi.map((m, i) => (
+            <div key={`${m.provider}/${m.modelId}`} className={rowClass}>
+              <div className={toggleClass(m.enabled)} onClick={() => togglePi(i)}>
+                <div className={dotClass(m.enabled)} />
+              </div>
+              <span className="text-[13px] text-gray-200 flex-1">{m.name}</span>
+              <span className="text-[11px] text-gray-500 font-mono">{m.provider}/{m.modelId}</span>
+              <span className="text-[11px] px-1.5 py-0.5 rounded bg-surface-700 text-gray-400">{m.badge}</span>
+              <button
+                onClick={() => deletePi(i)}
+                className="text-gray-600 hover:text-red-400 transition-colors p-1"
+                title="Delete"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {saving && <div className="text-[12px] text-primary-400 text-center">Saving...</div>}
     </div>
   );
 }

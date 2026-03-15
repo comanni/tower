@@ -150,12 +150,14 @@ export function getToolLabel(name: string): string {
     ExitPlanMode: 'Plan complete',
     TodoWrite: 'Manage todos',
   };
-  return labels[name] || name;
+  return labels[name] || labels[name.charAt(0).toUpperCase() + name.slice(1)] || name;
 }
 
 /** Get a summary string for a tool use */
 export function getToolSummary(name: string, input: Record<string, any>): string {
-  switch (name) {
+  // Normalize: SDK may send "bash" or "Bash"
+  const n = name.charAt(0).toUpperCase() + name.slice(1);
+  switch (n) {
     case 'Bash':
       return input.command ? `$ ${truncate(input.command, 60)}` : 'Run command';
     case 'Read':

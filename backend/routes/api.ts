@@ -25,7 +25,7 @@ import {
   getLog, getFileDiff, manualCommit, rollbackToCommit,
   autoCommit,
 } from '../services/git-manager.js';
-import { config, availableModels } from '../config.js';
+import { config, availableModels, loadModelsFile, saveModelsFile, reloadModels } from '../config.js';
 import { search } from '../services/search.js';
 import { extractTextFromContent } from '../utils/text.js';
 import { createTask, getTasks, getTask, updateTask, deleteTask, reorderTasks, getDistinctCwds, getArchivedTasks, restoreTask, permanentlyDeleteTask, getChildTasks } from '../services/task-manager.js';
@@ -318,6 +318,26 @@ router.delete('/shares/:id', (req, res) => {
   const ok = revokeShare(req.params.id, ownerId);
   if (!ok) return res.status(404).json({ error: 'Share not found or no permission to revoke.' });
   res.json({ ok: true });
+});
+
+// ───── Admin: Models ─────
+
+router.get('/admin/models', adminMiddleware, (_req, res) => {
+  res.json(loadModelsFile());
+});
+
+router.put('/admin/models', adminMiddleware, (req, res) => {
+  try {
+    const data = req.body;
+    if (!data.claude || !data.pi) return res.status(400).json({ error: 'claude and pi arrays required' });
+    saveModelsFile(data);
+    const reloaded = reloadModels();
+    // Broadcast updated model list to all connected clients
+    broadcast({ type: 'config_update', models: reloaded.claude, piModels: reloaded.pi });
+    res.json({ ok: true, ...reloaded });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ───── Admin: System Prompts ─────

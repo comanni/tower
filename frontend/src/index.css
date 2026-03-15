@@ -445,12 +445,6 @@ code, pre, .font-mono {
   50% { opacity: 0; }
 }
 
-.typewriter-cursor > :last-child::after {
-  content: ' ▎';
-  color: rgb(139 92 246);
-  animation: blink-cursor 0.8s step-end infinite;
-  font-weight: 200;
-}
 
 /* ─── Mobile input stability ─── */
 @media (max-width: 768px) {

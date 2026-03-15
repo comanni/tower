@@ -12,7 +12,7 @@ triggers:
 
 # /tower-upgrade — Workspace → Tower Template Bridge
 
-우리 workspace에서 만든 새로운 기능, 구조, 패턴을 Tower의 설치 템플릿(`~/claude-desk/templates/workspace/`)과 `setup.sh`에 안전하게 반영한다.
+우리 workspace에서 만든 새로운 기능, 구조, 패턴을 Tower의 설치 템플릿(`~/tower/templates/workspace/`)과 `setup.sh`에 안전하게 반영한다.
 
 **핵심 원칙: 기존 설치는 절대 깨뜨리지 않는다.**
 
@@ -42,11 +42,11 @@ triggers:
 2. **template과 비교**:
    ```bash
    # 현재 템플릿 구조
-   find ~/claude-desk/templates/workspace -type f
+   find ~/tower/templates/workspace -type f
 
    # workspace에는 있지만 template에는 없는 것
    diff <(cd ~/workspace && find . -maxdepth 3 -type d | sort) \
-        <(cd ~/claude-desk/templates/workspace && find . -maxdepth 3 -type d | sort)
+        <(cd ~/tower/templates/workspace && find . -maxdepth 3 -type d | sort)
    ```
 
 3. **최근 git 변경 분석** (선택적):
@@ -97,9 +97,9 @@ triggers:
 
 **반영 대상 파일**:
 
-1. **`~/claude-desk/templates/workspace/`** — 신규 설치 시 복사될 템플릿
-2. **`~/claude-desk/setup.sh`** — 설치 스크립트 (새 단계 추가 시)
-3. **`~/claude-desk/skills/`** — 번들 스킬 (install-skills.sh가 설치)
+1. **`~/tower/templates/workspace/`** — 신규 설치 시 복사될 템플릿
+2. **`~/tower/setup.sh`** — 설치 스크립트 (새 단계 추가 시)
+3. **`~/tower/skills/`** — 번들 스킬 (install-skills.sh가 설치)
 
 **반영 원칙**:
 
@@ -123,14 +123,14 @@ DON'T:
 
 ```bash
 # setup.sh 문법 검증
-bash -n ~/claude-desk/setup.sh
+bash -n ~/tower/setup.sh
 
 # 템플릿 구조 확인
-find ~/claude-desk/templates/workspace -type f | sort
+find ~/tower/templates/workspace -type f | sort
 
 # 기존 workspace와 충돌 없는지 시뮬레이션
 # (실제 복사하지 않고 어떤 파일이 영향받는지만 출력)
-for f in $(find ~/claude-desk/templates/workspace -type f); do
+for f in $(find ~/tower/templates/workspace -type f); do
   rel="${f#*/templates/workspace/}"
   target="$HOME/workspace/$rel"
   if [ -f "$target" ]; then
@@ -145,7 +145,7 @@ done
 
 ### Version Tracking
 
-`~/claude-desk/templates/workspace/.template-version` 파일로 템플릿 버전을 추적:
+`~/tower/templates/workspace/.template-version` 파일로 템플릿 버전을 추적:
 
 ```json
 {
@@ -200,6 +200,6 @@ tower-upgrade →
 
 ## Notes
 
-- 이 스킬은 `~/claude-desk` repo에서 실행해야 한다 (템플릿 수정 권한 필요)
+- 이 스킬은 `~/tower` repo에서 실행해야 한다 (템플릿 수정 권한 필요)
 - workspace가 있어야 비교 가능 — 없으면 scan만 제한적으로 동작
 - 대규모 변경은 별도 브랜치에서 작업하고 PR로 리뷰할 것을 권장

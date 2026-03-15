@@ -323,6 +323,13 @@ export function useClaudeChat() {
         break;
       }
 
+      case 'config_update': {
+        // Admin changed model config — update stores
+        if (data.models) useModelStore.getState().setAvailableModels(data.models);
+        if (data.piModels) useModelStore.getState().setPiModels(data.piModels);
+        break;
+      }
+
       case 'sdk_message': {
         // Ignore messages for sessions we're not currently viewing
         const _currentSid = useChatStore.getState().sessionId;

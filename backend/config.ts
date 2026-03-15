@@ -60,26 +60,50 @@ export interface ModelInfo {
   badge: string;
 }
 
-/** Load Pi models from engines/pi-models.json. Returns frontend-ready format with pi: prefix. */
-function loadPiModels(): ModelInfo[] {
+/** Centralized model config — read from backend/models.json */
+const MODELS_JSON_PATH = path.join(PROJECT_ROOT, 'backend', 'models.json');
+
+interface ModelsFile {
+  claude: Array<{ id: string; name: string; badge: string; enabled: boolean }>;
+  pi: Array<{ provider: string; modelId: string; name: string; badge: string; enabled: boolean }>;
+}
+
+export function loadModelsFile(): ModelsFile {
   try {
-    const jsonPath = path.join(__dirname, 'engines', 'pi-models.json');
-    const data = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
-    return (data.models || []).map((m: any) => ({
+    return JSON.parse(fs.readFileSync(MODELS_JSON_PATH, 'utf8'));
+  } catch {
+    return { claude: [], pi: [] };
+  }
+}
+
+export function saveModelsFile(data: ModelsFile): void {
+  fs.writeFileSync(MODELS_JSON_PATH, JSON.stringify(data, null, 2) + '\n', 'utf8');
+}
+
+function loadClaudeModels(): ModelInfo[] {
+  return loadModelsFile().claude
+    .filter(m => m.enabled)
+    .map(m => ({ id: m.id, name: m.name, badge: m.badge }));
+}
+
+function loadPiModels(): ModelInfo[] {
+  return loadModelsFile().pi
+    .filter(m => m.enabled)
+    .map(m => ({
       id: `pi:${m.provider}/${m.modelId}`,
       name: m.name,
       badge: m.badge || m.provider.toUpperCase().slice(0, 2),
     }));
-  } catch {
-    return [];
-  }
 }
 
-export const availableModels: ModelInfo[] = [
-  { id: 'claude-sonnet-4-6', name: 'Sonnet 4.6', badge: 'MAX' },
-  { id: 'claude-opus-4-6', name: 'Opus 4.6', badge: 'MAX' },
-  { id: 'claude-haiku-4-5-20251001', name: 'Haiku 4.5', badge: 'MAX' },
-];
+export let availableModels: ModelInfo[] = loadClaudeModels();
+
+/** Reload models from JSON file — call after admin edits */
+export function reloadModels(): { claude: ModelInfo[]; pi: ModelInfo[] } {
+  availableModels = loadClaudeModels();
+  config.piModels = loadPiModels();
+  return { claude: availableModels, pi: config.piModels };
+}
 
 export const config = {
   port: parseInt(process.env.PORT || '32354'),

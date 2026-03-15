@@ -7,7 +7,9 @@ export function ModelSelector() {
   const { availableModels, piModels, selectedModel, connectionType, setSelectedModel } = useModelStore();
 
   const allModels = [...availableModels, ...piModels];
-  const current = allModels.find((m) => m.id === selectedModel) || availableModels[0];
+  const current = allModels.find((m) => m.id === selectedModel)
+    || availableModels[0]
+    || { id: selectedModel, name: selectedModel.replace(/^pi:.*\//, '').replace(/-/g, ' '), badge: '' };
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {

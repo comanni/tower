@@ -16,7 +16,7 @@ import { randomUUID } from 'crypto';
 // ── Paths ──
 
 const HOME = homedir();
-export const TOWER_DB_PATH = join(HOME, 'claude-desk', 'data', 'tower.db');
+export const TOWER_DB_PATH = join(HOME, 'tower', 'data', 'tower.db');
 export const CLAUDE_PROJECTS_DIR = join(HOME, '.claude', 'projects');
 export const HISTORY_JSONL_PATH = join(HOME, '.claude', 'history.jsonl');
 

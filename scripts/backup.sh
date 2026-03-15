@@ -5,7 +5,7 @@ set -euo pipefail
 # Tower — Backup Script
 # ─────────────────────────────────────────────
 # Usage:  bash scripts/backup.sh [backup_dir]
-# Cron:   0 3 * * * cd ~/claude-desk && bash scripts/backup.sh
+# Cron:   0 3 * * * cd ~/tower && bash scripts/backup.sh
 # ─────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

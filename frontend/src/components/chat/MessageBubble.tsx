@@ -10,73 +10,18 @@ import { useChatStore, type ChatMessage, type ContentBlock, type TurnMetrics } f
 
 /** Progressively reveal characters via requestAnimationFrame at ~100 tokens/sec */
 // ~4 chars per token × 100 t/s = 400 chars/sec = 0.4 chars/ms
-const TYPEWRITER_CHARS_PER_MS = 0.4;
-
-function useTypewriter(fullText: string, isActive: boolean): string {
-  const [displayedLength, setDisplayedLength] = useState(0);
-  const revealedRef = useRef(0);
-  const targetRef = useRef(0);
-  const rafRef = useRef(0);
-  const lastTsRef = useRef(0);
-
-  targetRef.current = fullText.length;
-
-  useEffect(() => {
-    if (!isActive) {
-      cancelAnimationFrame(rafRef.current);
-      revealedRef.current = fullText.length;
-      setDisplayedLength(fullText.length);
-      return;
-    }
-
-    // Reset when starting a new typewriter session
-    revealedRef.current = 0;
-    lastTsRef.current = 0;
-    setDisplayedLength(0);
-
-    let running = true;
-    const animate = (ts: number) => {
-      if (!running) return;
-      if (lastTsRef.current === 0) lastTsRef.current = ts;
-      const elapsed = ts - lastTsRef.current;
-      lastTsRef.current = ts;
-
-      if (revealedRef.current < targetRef.current) {
-        const step = Math.max(1, Math.round(elapsed * TYPEWRITER_CHARS_PER_MS));
-        revealedRef.current = Math.min(revealedRef.current + step, targetRef.current);
-        setDisplayedLength(revealedRef.current);
-      }
-      rafRef.current = requestAnimationFrame(animate);
-    };
-
-    rafRef.current = requestAnimationFrame(animate);
-    return () => { running = false; cancelAnimationFrame(rafRef.current); };
-  }, [isActive]);
-
-  if (!isActive) return fullText;
-  return fullText.slice(0, displayedLength);
-}
-
-function TypewriterText({ content, showMetrics, isLastAssistant, mdComponents }: {
+function StreamingText({ content, mdComponents }: {
   content: string;
-  showMetrics: boolean;
-  isLastAssistant?: boolean;
   mdComponents: Record<string, any>;
 }) {
-  // Only animate the LAST assistant message — not all messages with showMetrics
-  const isStreaming = useChatStore((s) => isLastAssistant ? s.isStreaming : false);
-  const isActive = !!(isLastAssistant && isStreaming);
-  const displayedText = useTypewriter(content, isActive);
-  const isTyping = isActive && displayedText.length < content.length;
-
   return (
-    <div className={`prose prose-invert prose-sm max-w-none overflow-hidden${isTyping ? ' typewriter-cursor' : ''}`}>
+    <div className="prose prose-invert prose-sm max-w-none overflow-hidden">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeHighlight]}
         components={mdComponents}
       >
-        {displayedText}
+        {content}
       </ReactMarkdown>
     </div>
   );
@@ -311,11 +256,9 @@ export function MessageBubble({ message, onFileClick, onRetry, showMetrics, isLa
                     }
                     const segKey = `${gi}-${bi}-t${si}`;
                     return (
-                      <TypewriterText
+                      <StreamingText
                         key={segKey}
                         content={seg.content}
-                        showMetrics={!!showMetrics && segKey === lastTextSegKey}
-                        isLastAssistant={!!isLastAssistant && segKey === lastTextSegKey}
                         mdComponents={mdComponents}
                       />
                     );

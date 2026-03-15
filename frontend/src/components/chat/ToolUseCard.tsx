@@ -75,10 +75,15 @@ const defaultMeta = {
   color: 'text-gray-400', bg: 'bg-gray-500/10', border: 'border-gray-500/20',
 };
 
+/** Case-insensitive lookup — SDK may send "bash" or "Bash" */
+function getToolMeta(name: string) {
+  return toolMeta[name] || toolMeta[name.charAt(0).toUpperCase() + name.slice(1)] || defaultMeta;
+}
+
 export function ToolChip({ name, input, result, isActive, onClick }: ToolChipProps) {
   const isStreaming = useChatStore((s) => s.isStreaming);
   const isRunning = !result && isStreaming;
-  const meta = toolMeta[name] || defaultMeta;
+  const meta = getToolMeta(name);
   const summary = getToolSummary(name, input);
 
   return (
@@ -114,7 +119,7 @@ export function ToolUseCard({ name, input, result, onFileClick, compact, default
   const [expanded, setExpanded] = useState(defaultExpanded ?? false);
   const [resultExpanded, setResultExpanded] = useState(true);
 
-  const meta = toolMeta[name] || defaultMeta;
+  const meta = getToolMeta(name);
   const label = getToolLabel(name);
   const summary = getToolSummary(name, input);
   const filePath = input.file_path || input.path;

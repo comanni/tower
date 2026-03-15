@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 // --- Message Queue localStorage persistence ---
-const QUEUE_STORAGE_KEY = 'claude-desk:messageQueue';
+const QUEUE_STORAGE_KEY = 'tower:messageQueue';
 
 function saveQueueToStorage(queue: Record<string, string[]>) {
   try {

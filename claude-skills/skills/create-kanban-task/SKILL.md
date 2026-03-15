@@ -30,7 +30,7 @@ UI에서 수동으로 만드는 대신, 대화 중에 바로 태스크를 추가
 모든 API 호출 전에 먼저 토큰을 생성한다:
 
 ```bash
-cd ~/claude-desk && TOKEN=$(node -e "
+cd ~/tower && TOKEN=$(node -e "
 const jwt = require('jsonwebtoken');
 const fs = require('fs');
 const env = fs.readFileSync('.env','utf-8');
@@ -56,7 +56,7 @@ BASE URL: `http://localhost:32354/api`
 
 1. 인자에서 title을 추출한다. 자연어면 적절한 제목을 만든다.
 2. 옵션을 파싱한다:
-   - `--cwd <path>`: 작업 디렉토리 (기본: 현재 프로젝트의 cwd 또는 `~/claude-desk`)
+   - `--cwd <path>`: 작업 디렉토리 (기본: 현재 프로젝트의 cwd 또는 `~/tower`)
    - `--model <model>`: 모델 선택 (기본: `claude-sonnet-4-20250514`)
    - `--workflow <mode>`: auto, simple, default, feature, big_task (기본: `auto`)
    - `--description <text>`: 설명 (없으면 대화 맥락에서 생성)
@@ -64,7 +64,7 @@ BASE URL: `http://localhost:32354/api`
    - `--cron <expression>`: 반복 실행 크론 표현식
 3. 누락된 필수 값(cwd)은 합리적으로 추론한다:
    - 현재 대화의 프로젝트 폴더가 있으면 그것을 사용
-   - 없으면 `~/claude-desk` 사용
+   - 없으면 `~/tower` 사용
 4. API 호출:
 
 ```bash

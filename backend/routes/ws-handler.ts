@@ -468,7 +468,18 @@ async function handleChat(client: WsClient, data: { message: string; messageId?:
   const engineName = (dbSession as any)?.engine || config.defaultEngine || 'claude';
   const engine = await getEngine(engineName);
 
-  console.log(`[ws] handleChat START session=${sessionId.slice(0, 8)} client=${client.id.slice(0, 8)} engine=${engineName} active=${getTotalActiveCount()}`);
+  // Guard: drop model if it doesn't match the session's engine
+  const requestedModel: string | undefined = data.model;
+  const isClaudeModel = !requestedModel || requestedModel.startsWith('claude-');
+  const isPiModel = requestedModel?.includes('/'); // Pi models have provider/modelId format
+  let resolvedModel: string | undefined = requestedModel;
+  if (engineName === 'claude' && !isClaudeModel) resolvedModel = undefined;
+  if (engineName === 'pi' && !isPiModel) resolvedModel = undefined;
+  if (requestedModel && !resolvedModel) {
+    console.log(`[ws] model mismatch: dropping "${requestedModel}" for engine="${engineName}"`);
+  }
+
+  console.log(`[ws] handleChat START session=${sessionId.slice(0, 8)} client=${client.id.slice(0, 8)} engine=${engineName} model=${resolvedModel || 'default'} active=${getTotalActiveCount()}`);
 
   // Guard: reject if engine is already running for this session
   if (engine.isRunning(sessionId)) {
@@ -589,7 +600,7 @@ async function handleChat(client: WsClient, data: { message: string; messageId?:
 
     for await (const towerMsg of engine.run(sessionId, data.message, {
       cwd: data.cwd || dbSession?.cwd || client.allowedPath || config.defaultCwd,
-      model: data.model,
+      model: resolvedModel,
       userId: client.userId,
       username: client.username,
       userRole: client.userRole,

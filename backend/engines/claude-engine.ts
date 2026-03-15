@@ -153,6 +153,7 @@ export class ClaudeEngine implements Engine {
           if (Array.isArray(content)) {
             for (const block of content) {
               if (block.type === 'tool_use') {
+
                 const toolName = block.name?.toLowerCase() || '';
                 if ((toolName === 'write' || toolName === 'edit') && block.input?.file_path) {
                   editedFiles.add(block.input.file_path);
