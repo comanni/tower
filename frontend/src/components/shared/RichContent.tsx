@@ -158,7 +158,9 @@ export interface RichContentProps {
 }
 
 export function RichContent({ text, onFileClick }: RichContentProps) {
-  const segments = useMemo(() => splitDynamicBlocks(text), [text]);
+  // Defensive: ensure text is always a string (streaming may pass non-string)
+  const safeText = typeof text === 'string' ? text : String(text ?? '');
+  const segments = useMemo(() => splitDynamicBlocks(safeText), [safeText]);
   const mdComponents = useMemo(() => buildMdComponents({ onFileClick }), [onFileClick]);
 
   return (

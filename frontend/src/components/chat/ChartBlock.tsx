@@ -1,6 +1,5 @@
-import { useMemo } from 'react';
+import { useMemo, useRef, useState, useEffect } from 'react';
 import {
-  ResponsiveContainer,
   BarChart, Bar,
   LineChart, Line,
   AreaChart, Area,
@@ -32,9 +31,29 @@ interface ChartBlockProps {
   fallbackCode: string;
 }
 
+/** Use ResizeObserver instead of Recharts' ResponsiveContainer to avoid
+ *  context-null errors when lazy-loaded inside Suspense boundaries. */
+function useContainerWidth() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(400);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect?.width;
+      if (w && w > 0) setWidth(Math.floor(w));
+    });
+    ro.observe(el);
+    setWidth(el.clientWidth || 400);
+    return () => ro.disconnect();
+  }, []);
+  return { ref, width };
+}
+
 export default function ChartBlock({ raw, fallbackCode }: ChartBlockProps) {
   const theme = useSettingsStore((s) => s.theme);
   const t = getTheme(theme);
+  const { ref: containerRef, width: chartWidth } = useContainerWidth();
 
   const parsed = useMemo(() => {
     const result = parseLooseJson(raw);
@@ -73,12 +92,14 @@ export default function ChartBlock({ raw, fallbackCode }: ChartBlockProps) {
     tickLine: { stroke: t.grid },
   };
 
+  const dims = { width: chartWidth, height: 280 };
+
   function renderChart(): React.ReactElement {
     switch (spec.type) {
       case 'bar': {
         const layout = spec.horizontal ? 'vertical' as const : 'horizontal' as const;
         return (
-          <BarChart data={spec.data} layout={layout}>
+          <BarChart {...dims} data={spec.data} layout={layout}>
             <CartesianGrid strokeDasharray="3 3" stroke={t.grid} />
             {layout === 'vertical' ? (
               <>
@@ -102,7 +123,7 @@ export default function ChartBlock({ raw, fallbackCode }: ChartBlockProps) {
 
       case 'line':
         return (
-          <LineChart data={spec.data}>
+          <LineChart {...dims} data={spec.data}>
             <CartesianGrid strokeDasharray="3 3" stroke={t.grid} />
             <XAxis dataKey={resolvedXKey} {...commonAxisProps} />
             <YAxis {...commonAxisProps} tickFormatter={fmtNumber} />
@@ -116,7 +137,7 @@ export default function ChartBlock({ raw, fallbackCode }: ChartBlockProps) {
 
       case 'area':
         return (
-          <AreaChart data={spec.data}>
+          <AreaChart {...dims} data={spec.data}>
             <CartesianGrid strokeDasharray="3 3" stroke={t.grid} />
             <XAxis dataKey={resolvedXKey} {...commonAxisProps} />
             <YAxis {...commonAxisProps} tickFormatter={fmtNumber} />
@@ -130,7 +151,7 @@ export default function ChartBlock({ raw, fallbackCode }: ChartBlockProps) {
 
       case 'pie':
         return (
-          <PieChart>
+          <PieChart {...dims}>
             <Pie
               data={spec.data}
               dataKey={resolvedYKeys[0]}
@@ -150,7 +171,7 @@ export default function ChartBlock({ raw, fallbackCode }: ChartBlockProps) {
 
       case 'scatter':
         return (
-          <ScatterChart>
+          <ScatterChart {...dims}>
             <CartesianGrid strokeDasharray="3 3" stroke={t.grid} />
             <XAxis dataKey={resolvedXKey} {...commonAxisProps} name={resolvedXKey} />
             <YAxis dataKey={resolvedYKeys[0]} {...commonAxisProps} name={resolvedYKeys[0]} />
@@ -161,7 +182,7 @@ export default function ChartBlock({ raw, fallbackCode }: ChartBlockProps) {
 
       case 'radar':
         return (
-          <RadarChart data={spec.data} cx="50%" cy="50%" outerRadius="80%">
+          <RadarChart {...dims} data={spec.data} cx="50%" cy="50%" outerRadius="80%">
             <PolarGrid stroke={t.grid} />
             <PolarAngleAxis dataKey={resolvedXKey} tick={{ fill: t.text, fontSize: 11 }} />
             <PolarRadiusAxis tick={{ fill: t.text, fontSize: 10 }} />
@@ -175,7 +196,7 @@ export default function ChartBlock({ raw, fallbackCode }: ChartBlockProps) {
 
       case 'composed':
         return (
-          <ComposedChart data={spec.data}>
+          <ComposedChart {...dims} data={spec.data}>
             <CartesianGrid strokeDasharray="3 3" stroke={t.grid} />
             <XAxis dataKey={resolvedXKey} {...commonAxisProps} />
             <YAxis {...commonAxisProps} tickFormatter={fmtNumber} />
@@ -194,13 +215,11 @@ export default function ChartBlock({ raw, fallbackCode }: ChartBlockProps) {
   }
 
   return (
-    <div className="my-3 rounded-lg border border-surface-700/40 bg-surface-900/40 p-3">
+    <div ref={containerRef} className="my-3 rounded-lg border border-surface-700/40 bg-surface-900/40 p-3">
       {spec.title && (
         <div className="text-sm font-medium text-gray-300 mb-2 px-1">{spec.title}</div>
       )}
-      <ResponsiveContainer width="100%" height={280}>
-        {renderChart()}
-      </ResponsiveContainer>
+      {renderChart()}
     </div>
   );
 }

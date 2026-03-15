@@ -111,7 +111,7 @@ export function RoomMessageBubble({ message, isOwnMessage, parentMessage, onRepl
             <span className="text-[10px] text-gray-600">{formatTime(message.createdAt)}</span>
           </div>
           <div className="text-[13px] text-gray-300 leading-relaxed bg-blue-950/20 border border-blue-900/30 rounded-lg px-3 py-2">
-            {message.content
+            {message.content && typeof message.content === 'string'
               ? <RichContent text={message.content} />
               : <span className="text-gray-500 italic">typing...</span>
             }
