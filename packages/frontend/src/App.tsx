@@ -7,6 +7,7 @@ import { ContextPanel } from './components/layout/ContextPanel';
 import { LoginPage } from './components/auth/LoginPage';
 import { SettingsPanel } from './components/settings/SettingsPanel';
 import { AdminPanel } from './components/admin/AdminPanel';
+import { SkillsBrowser } from './components/skills/SkillsBrowser';
 import { BrowserPanel } from './components/browser/BrowserPanel';
 import { PublishPanel } from './components/publish/PublishPanel';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
@@ -986,6 +987,7 @@ function App() {
       {/* Settings modal */}
       <SettingsPanel onLogout={handleLogout} onBrowserOpen={() => setBrowserOpen(true)} />
       <AdminPanel open={adminOpen} onClose={() => setAdminOpen(false)} token={token} />
+      <SkillsBrowser />
       <BrowserPanel open={browserOpen} onClose={() => setBrowserOpen(false)} />
       <PublishPanel open={publishOpen} onClose={() => setPublishOpen(false)} />
 
