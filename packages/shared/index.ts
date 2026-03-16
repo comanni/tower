@@ -101,6 +101,24 @@ export interface FileEntry {
   extension?: string;
 }
 
+// ── Skill ────────────────────────────────────────────────────────
+
+export type SkillScope = 'company' | 'project' | 'personal';
+
+export interface SkillMeta {
+  id: string;
+  name: string;
+  scope: SkillScope;
+  description: string;
+  category: string;
+  enabled: boolean;
+  source: 'bundled' | 'custom';
+  projectId?: string | null;
+  userId?: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ── Git ──────────────────────────────────────────────────────────
 
 export interface GitCommitInfo {

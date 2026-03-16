@@ -323,6 +323,30 @@ function initSchema(db: Database.Database) {
   try { db.exec(`ALTER TABLE sessions ADD COLUMN project_id TEXT REFERENCES projects(id)`); } catch {}
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id)`); } catch {}
 
+  // ── Skill Registry (3-tier: company / project / personal) ──
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS skill_registry (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      scope TEXT NOT NULL CHECK(scope IN ('company','project','personal')),
+      project_id TEXT,
+      user_id INTEGER,
+      description TEXT DEFAULT '',
+      category TEXT DEFAULT 'general',
+      content TEXT NOT NULL,
+      enabled INTEGER DEFAULT 1,
+      source TEXT DEFAULT 'bundled',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_skill_scope_name
+      ON skill_registry(name, scope, COALESCE(project_id,''), COALESCE(user_id, 0));
+    CREATE INDEX IF NOT EXISTS idx_skill_project ON skill_registry(project_id) WHERE project_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_skill_user ON skill_registry(user_id) WHERE user_id IS NOT NULL;
+  `);
+
   // ── Engine support ──
   try { db.exec(`ALTER TABLE sessions ADD COLUMN engine TEXT DEFAULT 'claude'`); } catch {}
 

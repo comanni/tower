@@ -998,9 +998,120 @@ router.get('/config', (_req, res) => {
   });
 });
 
-// ───── Commands ─────
-router.get('/commands', (_req, res) => {
+// ───── Commands (now DB-backed via skill registry) ─────
+router.get('/commands', (req, res) => {
+  const userId = (req as any).user?.userId;
+  const projectId = req.query.projectId as string | undefined;
+
+  // Try DB-backed registry first, fall back to filesystem scan
+  try {
+    const { getCommandsForUser } = require('../services/skill-registry.js');
+    const commands = getCommandsForUser(userId, projectId || null);
+    if (commands.length > 0) {
+      return res.json(commands);
+    }
+  } catch {}
+
+  // Fallback: filesystem scan (backward compat during migration)
   res.json(loadCommands());
+});
+
+// ───── Skills Registry ─────
+router.get('/skills', (req, res) => {
+  try {
+    const { listSkills } = require('../services/skill-registry.js');
+    const userId = (req as any).user?.userId;
+    const scope = req.query.scope as string | undefined;
+    const projectId = req.query.projectId as string | undefined;
+    res.json(listSkills(scope, projectId, userId));
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/skills/:id', (req, res) => {
+  try {
+    const { getSkill } = require('../services/skill-registry.js');
+    const skill = getSkill(req.params.id);
+    if (!skill) return res.status(404).json({ error: 'Skill not found' });
+    res.json(skill);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/skills', (req, res) => {
+  try {
+    const { createSkill } = require('../services/skill-registry.js');
+    const userId = (req as any).user?.userId;
+    const role = (req as any).user?.role;
+    const { name, scope, content, description, category, projectId } = req.body;
+
+    if (!name || !scope || !content) {
+      return res.status(400).json({ error: 'name, scope, content required' });
+    }
+
+    // Permission check
+    if (scope === 'company' && role !== 'admin') {
+      return res.status(403).json({ error: 'Admin only for company skills' });
+    }
+
+    const skill = createSkill({
+      name, scope, content, description, category,
+      projectId: scope === 'project' ? projectId : undefined,
+      userId: scope === 'personal' ? userId : undefined,
+    });
+    res.json(skill);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/skills/:id', (req, res) => {
+  try {
+    const { updateSkill, getSkill } = require('../services/skill-registry.js');
+    const userId = (req as any).user?.userId;
+    const role = (req as any).user?.role;
+
+    const existing = getSkill(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Skill not found' });
+
+    // Permission check
+    if (existing.scope === 'company' && role !== 'admin') {
+      return res.status(403).json({ error: 'Admin only' });
+    }
+    if (existing.scope === 'personal' && existing.userId !== userId) {
+      return res.status(403).json({ error: 'Not your skill' });
+    }
+
+    const ok = updateSkill(req.params.id, req.body);
+    res.json({ ok });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/skills/:id', (req, res) => {
+  try {
+    const { deleteSkill, getSkill } = require('../services/skill-registry.js');
+    const userId = (req as any).user?.userId;
+    const role = (req as any).user?.role;
+
+    const existing = getSkill(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Skill not found' });
+
+    if (existing.scope === 'company' && role !== 'admin') {
+      return res.status(403).json({ error: 'Admin only' });
+    }
+    if (existing.scope === 'personal' && existing.userId !== userId) {
+      return res.status(403).json({ error: 'Not your skill' });
+    }
+
+    const ok = deleteSkill(req.params.id);
+    res.json({ ok });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ───── My Groups (for non-admin users) ─────
