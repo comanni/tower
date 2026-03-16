@@ -20,7 +20,7 @@ interface AdminPanelProps {
 }
 
 export function AdminPanel({ open, onClose, token }: AdminPanelProps) {
-  const [tab, setTab] = useState<'users' | 'groups' | 'models' | 'prompts' | 'system'>('users');
+  const [tab, setTab] = useState<'users' | 'groups' | 'models' | 'prompts' | 'skills' | 'system'>('users');
 
   if (!open) return null;
 
@@ -59,6 +59,7 @@ export function AdminPanel({ open, onClose, token }: AdminPanelProps) {
           <button className={tabClass('groups')} onClick={() => setTab('groups')}>Groups</button>
           <button className={tabClass('models')} onClick={() => setTab('models')}>Models</button>
           <button className={tabClass('prompts')} onClick={() => setTab('prompts')}>System Prompt</button>
+          <button className={tabClass('skills')} onClick={() => setTab('skills')}>Skills</button>
           <button className={tabClass('system')} onClick={() => setTab('system')}>System</button>
         </div>
 
@@ -68,6 +69,7 @@ export function AdminPanel({ open, onClose, token }: AdminPanelProps) {
           {tab === 'groups' && <GroupManagement token={token} />}
           {tab === 'models' && <ModelManagement token={token} />}
           {tab === 'prompts' && <SystemPromptEditor token={token} />}
+          {tab === 'skills' && <SkillsManagement token={token} />}
           {tab === 'system' && <SystemInfo />}
         </div>
       </div>
@@ -1243,6 +1245,152 @@ function ModelManagement({ token }: { token?: string | null }) {
       </div>
 
       {saving && <div className="text-[12px] text-primary-400 text-center">Saving...</div>}
+    </div>
+  );
+}
+
+// ───── Skills Tab ─────
+function SkillsManagement({ token }: { token?: string | null }) {
+  const [skills, setSkills] = useState<any[]>([]);
+  const [scope, setScope] = useState<'company' | 'project' | 'personal'>('company');
+  const [editing, setEditing] = useState<any | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState({ name: '', description: '', content: '', category: 'general' });
+
+  const hdrs: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) hdrs['Authorization'] = `Bearer ${token}`;
+
+  const loadSkills = useCallback(() => {
+    fetch(`${API_BASE}/skills?scope=${scope}`, { headers: hdrs })
+      .then(r => r.ok ? r.json() : [])
+      .then(setSkills)
+      .catch(() => {});
+  }, [scope, token]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { loadSkills(); }, [loadSkills]);
+
+  const handleCreate = async () => {
+    if (!form.name || !form.content) return;
+    await fetch(`${API_BASE}/skills`, {
+      method: 'POST', headers: hdrs,
+      body: JSON.stringify({ ...form, scope }),
+    });
+    setCreating(false);
+    setForm({ name: '', description: '', content: '', category: 'general' });
+    loadSkills();
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Delete this skill?')) return;
+    await fetch(`${API_BASE}/skills/${id}`, { method: 'DELETE', headers: hdrs });
+    loadSkills();
+  };
+
+  const handleToggle = async (id: string, enabled: boolean) => {
+    await fetch(`${API_BASE}/skills/${id}`, {
+      method: 'PUT', headers: hdrs,
+      body: JSON.stringify({ enabled: !enabled }),
+    });
+    loadSkills();
+  };
+
+  const handleUpdate = async () => {
+    if (!editing) return;
+    await fetch(`${API_BASE}/skills/${editing.id}`, {
+      method: 'PUT', headers: hdrs,
+      body: JSON.stringify({ name: form.name, description: form.description, content: form.content, category: form.category }),
+    });
+    setEditing(null);
+    loadSkills();
+  };
+
+  const scopeColors = {
+    company: 'bg-amber-900/30 text-amber-400 border-amber-500/30',
+    project: 'bg-green-900/30 text-green-400 border-green-500/30',
+    personal: 'bg-blue-900/30 text-blue-400 border-blue-500/30',
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Scope tabs */}
+      <div className="flex gap-2">
+        {(['company', 'project', 'personal'] as const).map(s => (
+          <button key={s} onClick={() => setScope(s)}
+            className={`px-3 py-1.5 text-[12px] font-medium rounded-lg border transition-colors ${
+              scope === s ? scopeColors[s] : 'text-gray-500 border-surface-700 hover:text-gray-300'
+            }`}>
+            {s === 'company' ? 'Company' : s === 'project' ? 'Project' : 'Personal'}
+            <span className="ml-1.5 text-[10px] opacity-60">{skills.length}</span>
+          </button>
+        ))}
+        <button onClick={() => { setCreating(true); setEditing(null); setForm({ name: '', description: '', content: '', category: 'general' }); }}
+          className="ml-auto px-3 py-1.5 text-[12px] font-medium rounded-lg bg-primary-600/20 text-primary-400 border border-primary-500/30 hover:bg-primary-600/30 transition-colors">
+          + New Skill
+        </button>
+      </div>
+
+      {/* Create / Edit form */}
+      {(creating || editing) && (
+        <div className="bg-surface-800/50 border border-surface-700 rounded-lg p-4 space-y-3">
+          <div className="flex gap-3">
+            <input placeholder="Skill name (no /)" value={form.name}
+              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+              className="flex-1 bg-surface-900 border border-surface-700 rounded-lg px-3 py-2 text-[13px] text-gray-200 focus:border-primary-500/50 focus:outline-none" />
+            <input placeholder="Category" value={form.category}
+              onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
+              className="w-32 bg-surface-900 border border-surface-700 rounded-lg px-3 py-2 text-[13px] text-gray-200 focus:border-primary-500/50 focus:outline-none" />
+          </div>
+          <input placeholder="Description" value={form.description}
+            onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+            className="w-full bg-surface-900 border border-surface-700 rounded-lg px-3 py-2 text-[13px] text-gray-200 focus:border-primary-500/50 focus:outline-none" />
+          <textarea placeholder="SKILL.md content (with frontmatter)" value={form.content}
+            onChange={e => setForm(f => ({ ...f, content: e.target.value }))}
+            rows={8}
+            className="w-full bg-surface-900 border border-surface-700 rounded-lg px-3 py-2 text-[13px] text-gray-200 font-mono focus:border-primary-500/50 focus:outline-none resize-y" />
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => { setCreating(false); setEditing(null); }}
+              className="px-3 py-1.5 text-[12px] text-gray-400 hover:text-gray-200 transition-colors">Cancel</button>
+            <button onClick={editing ? handleUpdate : handleCreate}
+              className="px-4 py-1.5 text-[12px] font-medium rounded-lg bg-primary-600 text-white hover:bg-primary-500 transition-colors">
+              {editing ? 'Update' : 'Create'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Skill list */}
+      <div className="border border-surface-700 rounded-lg divide-y divide-surface-800 overflow-hidden">
+        {skills.length === 0 && (
+          <div className="px-4 py-8 text-center text-[13px] text-gray-500">
+            No {scope} skills yet
+          </div>
+        )}
+        {skills.map((skill: any) => (
+          <div key={skill.id} className="flex items-center gap-3 px-4 py-3 hover:bg-surface-800/30 transition-colors group">
+            <span className="text-primary-500/70 font-mono text-[13px]">/</span>
+            <span className="text-[13px] font-medium text-gray-200">{skill.name}</span>
+            <span className="text-[11px] text-gray-500 truncate flex-1">{skill.description}</span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${scopeColors[skill.scope as keyof typeof scopeColors] || 'text-gray-500 border-surface-600'}`}>
+              {skill.category}
+            </span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${skill.source === 'bundled' ? 'bg-surface-700/50 text-gray-500' : 'bg-violet-900/30 text-violet-400'}`}>
+              {skill.source}
+            </span>
+            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button onClick={() => handleToggle(skill.id, skill.enabled)}
+                className={`px-2 py-1 text-[10px] rounded ${skill.enabled ? 'text-green-400 hover:text-red-400' : 'text-red-400 hover:text-green-400'}`}>
+                {skill.enabled ? 'ON' : 'OFF'}
+              </button>
+              <button onClick={() => { setEditing(skill); setCreating(false); setForm({ name: skill.name, description: skill.description, content: '', category: skill.category }); fetch(`${API_BASE}/skills/${skill.id}`, { headers: hdrs }).then(r => r.json()).then(d => setForm(f => ({ ...f, content: d.content || '' }))); }}
+                className="px-2 py-1 text-[10px] text-gray-500 hover:text-primary-400 transition-colors">Edit</button>
+              {skill.source !== 'bundled' && (
+                <button onClick={() => handleDelete(skill.id)}
+                  className="px-2 py-1 text-[10px] text-gray-500 hover:text-red-400 transition-colors">Del</button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
