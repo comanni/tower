@@ -1,14 +1,6 @@
 import { create } from 'zustand';
-
-export interface GitCommitInfo {
-  hash: string;
-  shortHash: string;
-  authorName: string;
-  message: string;
-  commitType: 'auto' | 'manual' | 'rollback';
-  filesChanged: string[];
-  createdAt: string;
-}
+export type { GitCommitInfo } from '@tower/shared';
+import type { GitCommitInfo } from '@tower/shared';
 
 interface GitState {
   commits: GitCommitInfo[];

@@ -1,13 +1,6 @@
 import { create } from 'zustand';
-
-export interface Pin {
-  id: number;
-  title: string;
-  file_path: string;
-  file_type: string;
-  sort_order: number;
-  created_at: string;
-}
+export type { Pin } from '@tower/shared';
+import type { Pin } from '@tower/shared';
 
 interface PinState {
   pins: Pin[];

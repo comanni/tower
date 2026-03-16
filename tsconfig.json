@@ -15,9 +15,10 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["frontend/src/*"],
-      "@backend/*": ["backend/*"]
+      "@backend/*": ["backend/*"],
+      "@tower/shared": ["packages/shared/index.ts"]
     }
   },
-  "include": ["frontend/src", "backend", "vite-env.d.ts"],
+  "include": ["frontend/src", "backend", "packages", "vite-env.d.ts"],
   "references": [{ "path": "./tsconfig.backend.json" }]
 }

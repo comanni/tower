@@ -1,24 +1,13 @@
 import { getDb } from '../db/schema.js';
 import { loadCommands } from './command-loader.js';
 
-export interface Pin {
-  id: number;
-  title: string;
-  file_path: string;
-  file_type: string;
+export type { PromptItem } from '@tower/shared';
+import type { Pin as PinBase } from '@tower/shared';
+
+export interface Pin extends PinBase {
   pin_type: 'file' | 'prompt';
   content: string | null;
-  sort_order: number;
   user_id: number | null;
-  created_at: string;
-}
-
-export interface PromptItem {
-  id: number | string;
-  title: string;
-  content: string;
-  source: 'user' | 'commands';
-  readonly: boolean;
 }
 
 export function getPins(userId?: number): Pin[] {

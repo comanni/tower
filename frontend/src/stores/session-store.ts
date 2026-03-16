@@ -1,25 +1,7 @@
 import { create } from 'zustand';
 import { dedupeSessionsById, addSessionIfNew } from '../utils/session-filters';
-
-export interface SessionMeta {
-  id: string;
-  claudeSessionId?: string;
-  name: string;
-  cwd: string;
-  tags: string[];
-  favorite: boolean;
-  totalCost: number;
-  totalTokens: number;
-  createdAt: string;
-  updatedAt: string;
-  modelUsed?: string;
-  autoNamed?: number;
-  summary?: string;
-  summaryAtTurn?: number;
-  turnCount?: number;
-  filesEdited?: string[];
-  projectId?: string | null;
-}
+export type { SessionMeta } from '@tower/shared';
+import type { SessionMeta } from '@tower/shared';
 
 export type MobileTab = 'sessions' | 'chat' | 'files' | 'edit' | 'pins' | 'board' | 'channel';
 

@@ -9,10 +9,15 @@
     "skipLibCheck": true,
     "outDir": "dist/backend",
     "rootDir": "backend",
-    "declaration": true
+    "declaration": true,
+    "baseUrl": ".",
+    "paths": {
+      "@tower/shared": ["packages/shared/index.ts"]
+    }
   },
   "include": [
-    "backend"
+    "backend",
+    "packages/shared"
   ],
   "exclude": [
     "backend/**/*.test.ts"

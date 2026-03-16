@@ -14,14 +14,8 @@ function fixUnicodeFilename(name: string): string {
   return name.normalize('NFC');
 }
 
-export interface FileEntry {
-  name: string;
-  path: string;
-  isDirectory: boolean;
-  size?: number;
-  modified?: string;
-  extension?: string;
-}
+export type { FileEntry } from '@tower/shared';
+import type { FileEntry } from '@tower/shared';
 
 export function isPathSafe(targetPath: string, root?: string): boolean {
   const resolvedTarget = path.resolve(targetPath);

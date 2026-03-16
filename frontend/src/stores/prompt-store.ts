@@ -1,12 +1,6 @@
 import { create } from 'zustand';
-
-export interface PromptItem {
-  id: number | string;
-  title: string;
-  content: string;
-  source: 'user' | 'commands';
-  readonly: boolean;
-}
+export type { PromptItem } from '@tower/shared';
+import type { PromptItem } from '@tower/shared';
 
 interface PromptState {
   prompts: PromptItem[];

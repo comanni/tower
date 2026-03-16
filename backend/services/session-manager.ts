@@ -4,27 +4,8 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { getAccessibleProjectIds } from './group-manager.js';
-
-export interface SessionMeta {
-  id: string;
-  claudeSessionId?: string;
-  name: string;
-  cwd: string;
-  tags: string[];
-  favorite: boolean;
-  totalCost: number;
-  totalTokens: number;
-  createdAt: string;
-  updatedAt: string;
-  modelUsed?: string;
-  autoNamed?: number;
-  summary?: string;
-  summaryAtTurn?: number;
-  turnCount?: number;
-  filesEdited?: string[];
-  projectId?: string | null;
-  engine?: string;
-}
+export type { SessionMeta } from '@tower/shared';
+import type { SessionMeta } from '@tower/shared';
 
 export function createSession(name: string, cwd: string, userId?: number, projectId?: string | null, engine?: string): SessionMeta {
   const id = uuidv4();

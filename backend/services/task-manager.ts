@@ -1,29 +1,11 @@
 import { getDb } from '../db/schema.js';
 import { v4 as uuidv4 } from 'uuid';
 import { getAccessibleProjectIds } from './group-manager.js';
+export type { WorkflowMode } from '@tower/shared';
+import type { TaskMeta as TaskMetaBase, WorkflowMode } from '@tower/shared';
 
-export type WorkflowMode = 'auto' | 'simple' | 'default' | 'feature' | 'big_task';
-
-export interface TaskMeta {
-  id: string;
-  title: string;
-  description: string;
-  cwd: string;
-  model: string;
-  status: 'todo' | 'in_progress' | 'done' | 'failed';
-  sessionId: string | null;
-  sortOrder: number;
-  progressSummary: string[];
-  createdAt: string;
-  updatedAt: string;
-  completedAt: string | null;
+export interface TaskMeta extends TaskMetaBase {
   userId: number | null;
-  scheduledAt: string | null;
-  scheduleCron: string | null;
-  scheduleEnabled: boolean;
-  workflow: WorkflowMode;
-  parentTaskId: string | null;
-  worktreePath: string | null;
   projectId: string | null;
   roomId: string | null;
   triggeredBy: number | null;

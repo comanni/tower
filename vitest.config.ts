@@ -3,7 +3,10 @@ import path from 'path';
 
 export default defineConfig({
   resolve: {
-    alias: { '@': path.resolve(__dirname, 'frontend/src') },
+    alias: {
+      '@': path.resolve(__dirname, 'frontend/src'),
+      '@tower/shared': path.resolve(__dirname, 'packages/shared/index.ts'),
+    },
   },
   test: {
     globals: true,
@@ -15,6 +18,7 @@ export default defineConfig({
       'backend/**/*.test.ts',
       'frontend/**/*.test.{ts,tsx}',
       'packages/**/*.test.ts',
+      '__tests__/**/*.test.ts',
     ],
   },
 });

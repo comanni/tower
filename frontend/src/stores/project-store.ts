@@ -1,16 +1,6 @@
 import { create } from 'zustand';
-
-export interface Project {
-  id: string;
-  name: string;
-  description: string | null;
-  rootPath: string | null;
-  color: string;
-  sortOrder: number;
-  collapsed: number;
-  archived: number;
-  createdAt: string;
-}
+export type { Project } from '@tower/shared';
+import type { Project } from '@tower/shared';
 
 interface ProjectState {
   projects: Project[];

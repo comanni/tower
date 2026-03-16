@@ -1,27 +1,6 @@
 import { create } from 'zustand';
-
-export type WorkflowMode = 'auto' | 'simple' | 'default' | 'feature' | 'big_task';
-
-export interface TaskMeta {
-  id: string;
-  title: string;
-  description: string;
-  cwd: string;
-  model: string;
-  status: 'todo' | 'in_progress' | 'done' | 'failed';
-  sessionId: string | null;
-  sortOrder: number;
-  progressSummary: string[];
-  createdAt: string;
-  updatedAt: string;
-  completedAt: string | null;
-  scheduledAt: string | null;
-  scheduleCron: string | null;
-  scheduleEnabled: boolean;
-  workflow: WorkflowMode;
-  parentTaskId: string | null;
-  worktreePath: string | null;
-}
+export type { WorkflowMode, TaskMeta } from '@tower/shared';
+import type { TaskMeta } from '@tower/shared';
 
 interface KanbanState {
   tasks: TaskMeta[];

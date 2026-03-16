@@ -55,6 +55,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'frontend/src'),
+      '@tower/shared': path.resolve(__dirname, 'packages/shared/index.ts'),
     },
   },
   server: {

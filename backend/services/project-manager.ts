@@ -11,17 +11,10 @@ function slugify(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'project';
 }
 
-export interface Project {
-  id: string;
-  name: string;
-  description: string | null;
-  rootPath: string | null;
-  color: string;
-  sortOrder: number;
-  collapsed: number;
-  archived: number;
+import type { Project as ProjectBase } from '@tower/shared';
+
+export interface Project extends ProjectBase {
   userId: number | null;
-  createdAt: string;
 }
 
 function rowToProject(row: any): Project {

@@ -1,12 +1,7 @@
 import { create } from 'zustand';
+import type { FileEntry as FileEntryBase } from '@tower/shared';
 
-export interface FileEntry {
-  name: string;
-  path: string;
-  isDirectory: boolean;
-  size?: number;
-  modified?: string;
-  extension?: string;
+export interface FileEntry extends FileEntryBase {
   children?: FileEntry[];
   isExpanded?: boolean;
   isLoading?: boolean;

@@ -5,15 +5,8 @@ import fs from 'fs';
 
 const execFileAsync = promisify(execFile);
 
-export interface GitCommitInfo {
-  hash: string;
-  shortHash: string;
-  authorName: string;
-  message: string;
-  commitType: 'auto' | 'manual' | 'rollback';
-  filesChanged: string[];
-  createdAt: string;
-}
+export type { GitCommitInfo } from '@tower/shared';
+import type { GitCommitInfo } from '@tower/shared';
 
 // Simple promise-based mutex for serializing git operations
 let gitLock = Promise.resolve();
