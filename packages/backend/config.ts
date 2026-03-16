@@ -6,9 +6,9 @@ import fs from 'fs';
 
 // Resolve project root from source file location (not process.cwd())
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// dev: packages/backend/config.ts → ../..  |  prod: dist/backend/config.js → ../..
+// dev: packages/backend/config.ts → ../..  |  prod: dist/backend/packages/backend/config.js → ../../../..
 const PROJECT_ROOT = __dirname.includes('dist')
-  ? path.resolve(__dirname, '..', '..')
+  ? path.resolve(__dirname, '..', '..', '..', '..')
   : path.resolve(__dirname, '..', '..');
 
 // Load .env file — provides defaults, inline env vars (from package.json scripts) take precedence

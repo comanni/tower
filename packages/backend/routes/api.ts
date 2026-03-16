@@ -135,7 +135,7 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 router.get('/shared/:token', async (req, res) => {
-  const share = getShareByToken(req.params.token);
+  const share = getShareByToken(req.params.token as string);
   if (!share || !isTokenValid(share)) {
     return res.status(410).json({ error: 'This link has expired or been revoked.' });
   }
@@ -315,7 +315,7 @@ router.get('/shares', (req, res) => {
 router.delete('/shares/:id', (req, res) => {
   const ownerId = (req as any).user?.userId;
   if (!ownerId) return res.status(401).json({ error: 'Unauthorized' });
-  const ok = revokeShare(req.params.id, ownerId);
+  const ok = revokeShare(req.params.id as string, ownerId);
   if (!ok) return res.status(404).json({ error: 'Share not found or no permission to revoke.' });
   res.json({ ok: true });
 });
@@ -348,7 +348,7 @@ router.get('/admin/system-prompts', adminMiddleware, (_req, res) => {
 });
 
 router.put('/admin/system-prompts/:name', adminMiddleware, (req, res) => {
-  const { name } = req.params;
+  const name = req.params.name as string;
   const { prompt } = req.body;
   if (!prompt && prompt !== '') return res.status(400).json({ error: 'prompt is required' });
   const result = upsertSystemPrompt(name, prompt);
@@ -356,7 +356,7 @@ router.put('/admin/system-prompts/:name', adminMiddleware, (req, res) => {
 });
 
 router.delete('/admin/system-prompts/:name', adminMiddleware, (req, res) => {
-  const { name } = req.params;
+  const name = req.params.name as string;
   const ok = deleteSystemPrompt(name);
   if (!ok) return res.status(400).json({ error: 'Cannot delete the default prompt' });
   res.json({ ok: true });
@@ -427,7 +427,7 @@ router.post('/admin/groups', adminMiddleware, (req, res) => {
 
 router.patch('/admin/groups/:id', adminMiddleware, (req, res) => {
   try {
-    const groupId = parseInt(req.params.id);
+    const groupId = parseInt(req.params.id as string);
     const group = updateGroup(groupId, req.body);
     if (!group) return res.status(404).json({ error: 'Group not found' });
     res.json(group);
@@ -438,13 +438,13 @@ router.patch('/admin/groups/:id', adminMiddleware, (req, res) => {
 });
 
 router.delete('/admin/groups/:id', adminMiddleware, (req, res) => {
-  const ok = deleteGroup(parseInt(req.params.id));
+  const ok = deleteGroup(parseInt(req.params.id as string));
   if (!ok) return res.status(404).json({ error: 'Group not found' });
   res.json({ ok: true });
 });
 
 router.post('/admin/groups/:id/users', adminMiddleware, (req, res) => {
-  const groupId = parseInt(req.params.id);
+  const groupId = parseInt(req.params.id as string);
   const { userId } = req.body;
   if (!userId) return res.status(400).json({ error: 'userId required' });
   addUserToGroup(userId, groupId);
@@ -452,8 +452,8 @@ router.post('/admin/groups/:id/users', adminMiddleware, (req, res) => {
 });
 
 router.delete('/admin/groups/:id/users/:uid', adminMiddleware, (req, res) => {
-  const groupId = parseInt(req.params.id);
-  const userId = parseInt(req.params.uid);
+  const groupId = parseInt(req.params.id as string);
+  const userId = parseInt(req.params.uid as string);
   removeUserFromGroup(userId, groupId);
   res.json({ ok: true });
 });
@@ -475,7 +475,7 @@ router.post('/sessions', (req, res) => {
 });
 
 router.get('/sessions/:id', (req, res) => {
-  const session = getSession(req.params.id);
+  const session = getSession(req.params.id as string);
   if (!session) return res.status(404).json({ error: 'Session not found' });
   res.json(session);
 });
@@ -490,14 +490,14 @@ router.patch('/sessions/:id', (req, res) => {
     }
     updates.cwd = cwd;
   }
-  updateSession(req.params.id, updates);
+  updateSession(req.params.id as string, updates);
   res.json({ ok: true });
 });
 
 // Auto-name session based on first messages
 router.post('/sessions/:id/auto-name', async (req, res) => {
   try {
-    const messages = getMessages(req.params.id);
+    const messages = getMessages(req.params.id as string);
     const userMsg = messages.find((m) => m.role === 'user');
     const assistantMsg = messages.find((m) => m.role === 'assistant');
     if (!userMsg || !assistantMsg) {
@@ -508,7 +508,7 @@ router.post('/sessions/:id/auto-name', async (req, res) => {
     const assistantText = extractTextFromContent(assistantMsg.content);
 
     const name = await generateSessionName(userText, assistantText);
-    updateSession(req.params.id, { name, autoNamed: 1 } as any);
+    updateSession(req.params.id as string, { name, autoNamed: 1 } as any);
     res.json({ ok: true, name });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -518,7 +518,7 @@ router.post('/sessions/:id/auto-name', async (req, res) => {
 // Summarize session
 router.post('/sessions/:id/summarize', async (req, res) => {
   try {
-    const messages = getMessages(req.params.id);
+    const messages = getMessages(req.params.id as string);
     if (messages.length === 0) {
       return res.status(400).json({ error: 'No messages to summarize' });
     }
@@ -536,7 +536,7 @@ router.post('/sessions/:id/summarize', async (req, res) => {
       .filter(Boolean)
       .join('\n');
 
-    console.log('[summarize] sessionId:', req.params.id);
+    console.log('[summarize] sessionId:', req.params.id as string);
     console.log('[summarize] messages count:', messages.length);
     console.log('[summarize] filtered count:', recent.filter((m) => m.role === 'user' || m.role === 'assistant').length);
     console.log('[summarize] messagesText length:', messagesText.length);
@@ -545,9 +545,9 @@ router.post('/sessions/:id/summarize', async (req, res) => {
     const summary = await generateSummary(messagesText);
 
     // Get current session to read turnCount
-    const session = getSession(req.params.id);
+    const session = getSession(req.params.id as string);
     const turnCount = session?.turnCount ?? 0;
-    updateSession(req.params.id, { summary, summaryAtTurn: turnCount });
+    updateSession(req.params.id as string, { summary, summaryAtTurn: turnCount });
     res.json({ ok: true, summary, summaryAtTurn: turnCount });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -555,7 +555,7 @@ router.post('/sessions/:id/summarize', async (req, res) => {
 });
 
 router.delete('/sessions/:id', (req, res) => {
-  const deleted = deleteSession(req.params.id);
+  const deleted = deleteSession(req.params.id as string);
   if (!deleted) return res.status(404).json({ error: 'Session not found' });
   res.json({ ok: true });
 });
@@ -581,7 +581,7 @@ router.get('/search', (req, res) => {
 // ───── Session Messages ─────
 router.get('/sessions/:id/messages', (req, res) => {
   try {
-    const messages = getMessages(req.params.id);
+    const messages = getMessages(req.params.id as string);
     res.json(messages);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -953,7 +953,7 @@ router.get('/git/log', async (req, res) => {
 
 router.get('/git/diff/:hash', async (req, res) => {
   try {
-    const diff = await getFileDiff(config.workspaceRoot, req.params.hash);
+    const diff = await getFileDiff(config.workspaceRoot, req.params.hash as string);
     res.json({ diff });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -1045,7 +1045,7 @@ router.post('/projects', (req, res) => {
 
 router.patch('/projects/:id', (req, res) => {
   try {
-    const project = updateProject(req.params.id, req.body);
+    const project = updateProject(req.params.id as string, req.body);
     if (!project) return res.status(404).json({ error: 'project not found' });
     res.json(project);
   } catch (err: any) {
@@ -1055,7 +1055,7 @@ router.patch('/projects/:id', (req, res) => {
 
 router.delete('/projects/:id', (req, res) => {
   try {
-    const ok = deleteProject(req.params.id);
+    const ok = deleteProject(req.params.id as string);
     if (!ok) return res.status(404).json({ error: 'project not found' });
     res.json({ ok: true });
   } catch (err: any) {
@@ -1068,7 +1068,7 @@ router.delete('/projects/:id', (req, res) => {
 router.get('/projects/:id/members', (req, res) => {
   const userId = (req as any).user?.userId;
   const role = (req as any).user?.role;
-  const projectId = req.params.id;
+  const projectId = req.params.id as string;
   // Any member, owner, or admin can view members
   if (role !== 'admin' && userId) {
     const project = getProject(projectId);
@@ -1083,7 +1083,7 @@ router.get('/projects/:id/members', (req, res) => {
 router.post('/projects/:id/members', (req, res) => {
   const userId = (req as any).user?.userId;
   const role = (req as any).user?.role;
-  const projectId = req.params.id;
+  const projectId = req.params.id as string;
 
   // Only owner or admin can add members
   if (role !== 'admin' && !isProjectOwner(projectId, userId)) {
@@ -1108,8 +1108,8 @@ router.post('/projects/:id/members', (req, res) => {
 router.delete('/projects/:id/members/:uid', (req, res) => {
   const userId = (req as any).user?.userId;
   const role = (req as any).user?.role;
-  const projectId = req.params.id;
-  const targetUserId = parseInt(req.params.uid);
+  const projectId = req.params.id as string;
+  const targetUserId = parseInt(req.params.uid as string);
 
   // Only owner or admin can remove members
   if (role !== 'admin' && !isProjectOwner(projectId, userId)) {
@@ -1147,10 +1147,10 @@ router.post('/projects/reorder', (req, res) => {
 router.post('/sessions/:id/move', (req, res) => {
   try {
     const { projectId } = req.body;
-    const ok = moveSessionToProject(req.params.id, projectId ?? null);
+    const ok = moveSessionToProject(req.params.id as string, projectId ?? null);
     if (!ok) return res.status(404).json({ error: 'session or project not found' });
     // Broadcast so all connected clients update their session lists
-    broadcast({ type: 'session_moved', sessionId: req.params.id, projectId: projectId ?? null });
+    broadcast({ type: 'session_moved', sessionId: req.params.id as string, projectId: projectId ?? null });
     res.json({ ok: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -1194,7 +1194,7 @@ router.post('/tasks', (req, res) => {
 
 router.patch('/tasks/:id', (req, res) => {
   try {
-    const task = updateTask(req.params.id, req.body);
+    const task = updateTask(req.params.id as string, req.body);
     if (!task) return res.status(404).json({ error: 'task not found' });
     res.json(task);
   } catch (err: any) {
@@ -1204,7 +1204,7 @@ router.patch('/tasks/:id', (req, res) => {
 
 router.delete('/tasks/:id', (req, res) => {
   try {
-    const ok = deleteTask(req.params.id);
+    const ok = deleteTask(req.params.id as string);
     if (!ok) return res.status(404).json({ error: 'task not found' });
     res.json({ success: true });
   } catch (err: any) {
@@ -1214,7 +1214,7 @@ router.delete('/tasks/:id', (req, res) => {
 
 router.get('/tasks/:id/children', (req, res) => {
   try {
-    const children = getChildTasks(req.params.id);
+    const children = getChildTasks(req.params.id as string);
     res.json(children);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -1223,14 +1223,14 @@ router.get('/tasks/:id/children', (req, res) => {
 
 router.post('/tasks/:id/cleanup-worktree', (req, res) => {
   try {
-    const task = getTask(req.params.id);
+    const task = getTask(req.params.id as string);
     if (!task) return res.status(404).json({ error: 'task not found' });
     if (task.status === 'in_progress') return res.status(400).json({ error: 'cannot cleanup worktree for running task' });
     if (!task.worktreePath) return res.status(400).json({ error: 'task has no worktree' });
 
     const ok = removeWorktree(task.worktreePath);
     if (ok) {
-      updateTask(req.params.id, { worktreePath: null });
+      updateTask(req.params.id as string, { worktreePath: null });
     }
     res.json({ success: ok });
   } catch (err: any) {
@@ -1263,7 +1263,7 @@ router.get('/history', (req, res) => {
 
 router.post('/sessions/:id/restore', (req, res) => {
   try {
-    const ok = restoreSession(req.params.id);
+    const ok = restoreSession(req.params.id as string);
     if (!ok) return res.status(404).json({ error: 'session not found' });
     res.json({ success: true });
   } catch (err: any) {
@@ -1273,7 +1273,7 @@ router.post('/sessions/:id/restore', (req, res) => {
 
 router.delete('/sessions/:id/permanent', (req, res) => {
   try {
-    const ok = permanentlyDeleteSession(req.params.id);
+    const ok = permanentlyDeleteSession(req.params.id as string);
     if (!ok) return res.status(404).json({ error: 'session not found' });
     res.json({ success: true });
   } catch (err: any) {
@@ -1283,7 +1283,7 @@ router.delete('/sessions/:id/permanent', (req, res) => {
 
 router.post('/tasks/:id/restore', (req, res) => {
   try {
-    const ok = restoreTask(req.params.id);
+    const ok = restoreTask(req.params.id as string);
     if (!ok) return res.status(404).json({ error: 'task not found' });
     res.json({ success: true });
   } catch (err: any) {
@@ -1293,7 +1293,7 @@ router.post('/tasks/:id/restore', (req, res) => {
 
 router.delete('/tasks/:id/permanent', (req, res) => {
   try {
-    const ok = permanentlyDeleteTask(req.params.id);
+    const ok = permanentlyDeleteTask(req.params.id as string);
     if (!ok) return res.status(404).json({ error: 'task not found' });
     res.json({ success: true });
   } catch (err: any) {
@@ -1337,11 +1337,11 @@ router.post('/rooms', authMiddleware, async (req, res) => {
 router.get('/rooms/:id', authMiddleware, async (req, res) => {
   try {
     const { getRoom, getMembers, isMember } = await import('../services/room-manager.js');
-    const room = await getRoom(req.params.id);
+    const room = await getRoom(req.params.id as string);
     if (!room) return res.status(404).json({ error: 'Room not found' });
     const userId = (req as any).user.userId;
-    if (!(await isMember(req.params.id, userId))) return res.status(403).json({ error: 'Not a member' });
-    const members = await getMembers(req.params.id);
+    if (!(await isMember(req.params.id as string, userId))) return res.status(403).json({ error: 'Not a member' });
+    const members = await getMembers(req.params.id as string);
     res.json({ ...room, members });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
@@ -1349,7 +1349,7 @@ router.get('/rooms/:id', authMiddleware, async (req, res) => {
 router.patch('/rooms/:id', authMiddleware, async (req, res) => {
   try {
     const { updateRoom } = await import('../services/room-manager.js');
-    const room = await updateRoom(req.params.id, req.body);
+    const room = await updateRoom(req.params.id as string, req.body);
     if (!room) return res.status(404).json({ error: 'Room not found' });
     res.json(room);
   } catch (err: any) { res.status(500).json({ error: err.message }); }
@@ -1358,7 +1358,7 @@ router.patch('/rooms/:id', authMiddleware, async (req, res) => {
 router.delete('/rooms/:id', authMiddleware, async (req, res) => {
   try {
     const { deleteRoom } = await import('../services/room-manager.js');
-    const ok = await deleteRoom(req.params.id);
+    const ok = await deleteRoom(req.params.id as string);
     if (!ok) return res.status(404).json({ error: 'Room not found' });
     res.json({ success: true });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
@@ -1367,7 +1367,7 @@ router.delete('/rooms/:id', authMiddleware, async (req, res) => {
 router.get('/rooms/:id/invitable-users', authMiddleware, async (req, res) => {
   try {
     const { getMembers } = await import('../services/room-manager.js');
-    const members = await getMembers(req.params.id);
+    const members = await getMembers(req.params.id as string);
     const memberUserIds = new Set(members.map(m => m.userId));
 
     // Get all active users from SQLite, exclude current members
@@ -1389,20 +1389,20 @@ router.post('/rooms/:id/members', authMiddleware, async (req, res) => {
     const { addMember, getRoom } = await import('../services/room-manager.js');
     const { userId, role } = req.body;
     if (!userId) return res.status(400).json({ error: 'userId is required' });
-    const member = await addMember(req.params.id, userId, role);
+    const member = await addMember(req.params.id as string, userId, role);
     res.json(member);
 
     // Notify room members about new member (real-time update)
     try {
       const { broadcastToRoom, broadcastToUser } = await import('./ws-handler.js');
-      broadcastToRoom(req.params.id, {
+      broadcastToRoom(req.params.id as string, {
         type: 'room_member_added',
-        roomId: req.params.id,
+        roomId: req.params.id as string,
         member,
       });
 
       // Notify the invited user so they see the room in their list
-      const room = await getRoom(req.params.id);
+      const room = await getRoom(req.params.id as string);
       if (room) {
         broadcastToUser(userId, {
           type: 'room_added',
@@ -1416,23 +1416,23 @@ router.post('/rooms/:id/members', authMiddleware, async (req, res) => {
 router.delete('/rooms/:id/members/:userId', authMiddleware, async (req, res) => {
   try {
     const { removeMember } = await import('../services/room-manager.js');
-    const removedUserId = parseInt(req.params.userId);
-    const ok = await removeMember(req.params.id, removedUserId);
+    const removedUserId = parseInt(req.params.userId as string);
+    const ok = await removeMember(req.params.id as string, removedUserId);
     if (!ok) return res.status(404).json({ error: 'Member not found' });
     res.json({ success: true });
 
     // Notify room members about removed member
     try {
       const { broadcastToRoom, broadcastToUser } = await import('./ws-handler.js');
-      broadcastToRoom(req.params.id, {
+      broadcastToRoom(req.params.id as string, {
         type: 'room_member_removed',
-        roomId: req.params.id,
+        roomId: req.params.id as string,
         userId: removedUserId,
       });
       // Notify the removed user
       broadcastToUser(removedUserId, {
         type: 'room_removed',
-        roomId: req.params.id,
+        roomId: req.params.id as string,
       });
     } catch { /* WS notification is best-effort */ }
   } catch (err: any) { res.status(500).json({ error: err.message }); }
@@ -1442,8 +1442,8 @@ router.get('/rooms/:id/messages', authMiddleware, async (req, res) => {
   try {
     const { getMessages: getRoomMessages, isMember } = await import('../services/room-manager.js');
     const userId = (req as any).user.userId;
-    if (!(await isMember(req.params.id, userId))) return res.status(403).json({ error: 'Not a member' });
-    const messages = await getRoomMessages(req.params.id, {
+    if (!(await isMember(req.params.id as string, userId))) return res.status(403).json({ error: 'Not a member' });
+    const messages = await getRoomMessages(req.params.id as string, {
       limit: parseInt(req.query.limit as string) || 50,
       before: req.query.before as string,
       after: req.query.after as string,
@@ -1468,7 +1468,7 @@ router.get('/notifications', authMiddleware, async (req, res) => {
 router.post('/notifications/:id/read', authMiddleware, async (req, res) => {
   try {
     const { markNotificationRead } = await import('../services/room-manager.js');
-    await markNotificationRead(req.params.id);
+    await markNotificationRead(req.params.id as string);
     res.json({ success: true });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });

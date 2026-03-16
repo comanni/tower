@@ -5,7 +5,7 @@ const home = os.homedir();
 module.exports = {
   apps: [{
     name: "tower",
-    script: "dist/backend/index.js",
+    script: "dist/backend/packages/backend/index.js",
     env: {
       NODE_ENV: "production",
       PORT: 32354,

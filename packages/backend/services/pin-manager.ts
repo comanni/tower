@@ -2,7 +2,7 @@ import { getDb } from '../db/schema.js';
 import { loadCommands } from './command-loader.js';
 
 export type { PromptItem } from '@tower/shared';
-import type { Pin as PinBase } from '@tower/shared';
+import type { Pin as PinBase, PromptItem } from '@tower/shared';
 
 export interface Pin extends PinBase {
   pin_type: 'file' | 'prompt';

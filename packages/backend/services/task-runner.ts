@@ -582,7 +582,7 @@ async function runTaskAgent(
         // Extract progress from text blocks
         const textBlocks = content.filter((b: any) => b.type === 'text');
         for (const block of textBlocks) {
-          const text = block.text || '';
+          const text = (block as any).text || '';
 
           // Detect triage workflow classification (auto mode only)
           if (effectiveWorkflow === 'auto') {
