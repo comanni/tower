@@ -14,6 +14,7 @@ export default defineConfig({
     include: [
       'backend/**/*.test.ts',
       'frontend/**/*.test.{ts,tsx}',
+      'packages/**/*.test.ts',
     ],
   },
 });
