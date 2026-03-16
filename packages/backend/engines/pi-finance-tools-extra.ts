@@ -9,7 +9,19 @@
 
 import { Type } from '@sinclair/typebox';
 import { execSync } from 'child_process';
+import * as fs from 'fs';
 import type { ToolDefinition } from '@mariozechner/pi-coding-agent';
+
+/** Run a Python script via temp file (avoids shell escaping issues with python3 -c). */
+function runPython(script: string, opts?: { timeout?: number }): string {
+  const tmpScript = '/tmp/tower_py_run.py';
+  fs.writeFileSync(tmpScript, script, 'utf-8');
+  return execSync(`python3 ${tmpScript}`, {
+    timeout: opts?.timeout || 30000,
+    maxBuffer: 10 * 1024 * 1024,
+    encoding: 'utf-8',
+  });
+}
 
 
 // ═══════════════════════════════════════════════════════════════
@@ -119,11 +131,7 @@ except Exception as e:
 `.trim();
 
     try {
-      const result = execSync(`python3 -c ${JSON.stringify(pyScript)}`, {
-        timeout: 60000,
-        maxBuffer: 10 * 1024 * 1024,
-        encoding: 'utf-8',
-      });
+      const result = runPython(pyScript, { timeout: 60000 });
       const parsed = JSON.parse(result);
       if (parsed.error) {
         return { content: [{ type: 'text' as const, text: `Error: ${parsed.error}` }], details: undefined };
@@ -266,11 +274,7 @@ print(json.dumps({"file": os.path.basename(path), "path": os.path.abspath(path),
 `.trim();
 
     try {
-      const result = execSync(`python3 -c ${JSON.stringify(pyScript)}`, {
-        timeout: 30000,
-        maxBuffer: 5 * 1024 * 1024,
-        encoding: 'utf-8',
-      });
+      const result = runPython(pyScript);
       const parsed = JSON.parse(result);
       if (parsed.error) {
         return { content: [{ type: 'text' as const, text: `Error: ${parsed.error}` }], details: undefined };
@@ -326,7 +330,7 @@ export const excelDiffTool: ToolDefinition = {
 
     // Ensure the smart reader script exists in /tmp
     try {
-      execSync('python3 -c "import sys; sys.path.insert(0,\'/tmp\'); from tower_excel_reader import smart_read"', { encoding: 'utf-8' });
+      runPython('import sys; sys.path.insert(0, "/tmp"); from tower_excel_reader import smart_read');
     } catch {
       // Will fall back to plain pandas inside the script
     }
@@ -452,11 +456,7 @@ except Exception as e:
 `.trim();
 
     try {
-      const result = execSync(`python3 -c ${JSON.stringify(pyScript)}`, {
-        timeout: 60000,
-        maxBuffer: 10 * 1024 * 1024,
-        encoding: 'utf-8',
-      });
+      const result = runPython(pyScript, { timeout: 60000 });
       const parsed = JSON.parse(result);
       if (parsed.error) {
         return { content: [{ type: 'text' as const, text: `Error: ${parsed.error}` }], details: undefined };

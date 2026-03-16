@@ -13,7 +13,19 @@
 
 import { Type } from '@sinclair/typebox';
 import { execSync } from 'child_process';
+import * as fs from 'fs';
 import type { ToolDefinition } from '@mariozechner/pi-coding-agent';
+
+/** Run a Python script via temp file (avoids shell escaping issues with python3 -c). */
+function runPython(script: string, opts?: { timeout?: number }): string {
+  const tmpScript = '/tmp/tower_py_run.py';
+  fs.writeFileSync(tmpScript, script, 'utf-8');
+  return execSync(`python3 ${tmpScript}`, {
+    timeout: opts?.timeout || 30000,
+    maxBuffer: 10 * 1024 * 1024,
+    encoding: 'utf-8',
+  });
+}
 
 // ── Shared Python helper: smart Excel reader with full metadata ──
 const SMART_READER_PY = String.raw`
@@ -268,11 +280,7 @@ except Exception as e:
 `.trim();
 
     try {
-      const result = execSync(`python3 -c ${JSON.stringify(pyScript)}`, {
-        timeout: 30000,
-        maxBuffer: 10 * 1024 * 1024,
-        encoding: 'utf-8',
-      });
+      const result = runPython(pyScript);
       const parsed = JSON.parse(result);
       if (parsed.error) {
         return { content: [{ type: 'text' as const, text: `Error: ${parsed.error}` }], details: undefined };
@@ -376,11 +384,7 @@ except Exception as e:
 `.trim();
 
     try {
-      const result = execSync(`python3 -c ${JSON.stringify(pyScript)}`, {
-        timeout: 60000,
-        maxBuffer: 10 * 1024 * 1024,
-        encoding: 'utf-8',
-      });
+      const result = runPython(pyScript, { timeout: 60000 });
       const truncated = result.length > 10000 ? result.slice(0, 10000) + '\n...(truncated)' : result;
       return { content: [{ type: 'text' as const, text: truncated }], details: undefined };
     } catch (err: any) {
