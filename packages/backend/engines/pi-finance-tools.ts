@@ -33,12 +33,25 @@ import openpyxl, pandas as pd, json, sys, os
 from collections import Counter
 
 def _rgb_str(color):
+    """Convert openpyxl color to a readable string. Resolves theme colors to descriptive names."""
     if not color: return None
     try:
         if color.type == 'rgb' and color.rgb and str(color.rgb) != '00000000':
             return str(color.rgb)[-6:]
         if color.type == 'theme':
-            return f"theme:{color.theme}"
+            # Map Excel theme indices to readable names
+            # Theme 0-1: bg/text base, 2-3: bg/text secondary, 4-9: accent1-6
+            theme_names = {
+                0: "white-bg", 1: "dark-text", 2: "light-bg2", 3: "dark-text2",
+                4: "accent-blue", 5: "accent-orange", 6: "accent-gray",
+                7: "accent-gold", 8: "accent-teal", 9: "accent-green",
+            }
+            name = theme_names.get(color.theme, f"theme{color.theme}")
+            # Tint indicates lightening (>0) or darkening (<0)
+            if color.tint and abs(color.tint) > 0.01:
+                shade = "light" if color.tint > 0 else "dark"
+                name = f"{name}-{shade}"
+            return name
     except: pass
     return None
 
@@ -189,11 +202,16 @@ def smart_read(path, sheet_name=None, max_rows=100):
 
     # 8. Color legend
     known = {
-        "FFFF00": "highlight/active", "FFC000": "warning/estimate",
+        "FFFF00": "highlight/active", "FFFFCC": "highlight-light",
+        "FFC000": "warning/estimate", "FFE699": "estimate-light",
         "FF0000": "negative/alert", "00FF00": "positive/confirmed",
         "D8D8D8": "header", "D9D9D9": "header/summary",
         "EFEFEF": "subtotal", "B0B0B0": "section-label",
         "E2EFDA": "positive", "FCE4D6": "caution",
+        # Theme-derived names
+        "white-bg": "background", "white-bg-dark": "light-gray-bg",
+        "accent-teal-light": "section-highlight", "accent-blue-light": "accent",
+        "accent-gray-light": "muted-section",
     }
     color_legend = {}
     for color, count in bg_counter.most_common(10):
