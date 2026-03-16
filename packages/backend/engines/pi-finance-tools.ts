@@ -33,6 +33,26 @@ def _rgb_str(color):
 def smart_read(path, sheet_name=None, max_rows=100):
     """Read Excel with merged-cell unmerging, auto header detection,
     formatting extraction, and formula capture."""
+    import glob as _glob
+
+    # Resolve path: if file not found, try glob (handles broken-encoding Korean filenames)
+    if not os.path.exists(path):
+        # Try glob in the same directory
+        parent = os.path.dirname(path) or '.'
+        candidates = _glob.glob(os.path.join(parent, '*'))
+        # Match by basename similarity or extension
+        base = os.path.basename(path).lower()
+        ext_match = [f for f in candidates if os.path.splitext(f)[1].lower() in ('.xlsx','.xls','.xlsm','.csv')]
+        if len(ext_match) == 1:
+            path = ext_match[0]
+        elif ext_match:
+            # Try partial name match
+            for f in ext_match:
+                if base[:4] in os.path.basename(f).lower():
+                    path = f; break
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"File not found: {path}")
+
     ext = os.path.splitext(path)[1].lower()
 
     if ext == '.csv':
@@ -43,9 +63,10 @@ def smart_read(path, sheet_name=None, max_rows=100):
             "merged_fixed": 0, "header_row": 0,
         }
 
-    # Load twice: values + formulas
-    wb_val = openpyxl.load_workbook(path, data_only=True)
-    wb_fmt = openpyxl.load_workbook(path, data_only=False)
+    # Load twice: values + formulas (.xlsm needs keep_vba=False to skip macros)
+    kw = {"keep_vba": False} if ext == '.xlsm' else {}
+    wb_val = openpyxl.load_workbook(path, data_only=True, **kw)
+    wb_fmt = openpyxl.load_workbook(path, data_only=False, **kw)
     ws_val = wb_val[sheet_name] if sheet_name and sheet_name in wb_val.sheetnames else wb_val.active
     ws_fmt = wb_fmt[sheet_name] if sheet_name and sheet_name in wb_fmt.sheetnames else wb_fmt.active
 
@@ -200,7 +221,7 @@ function ensureReaderScript(): void {
 // ═══════════════════════════════════════════════════════════════
 
 const ExcelReadParams = Type.Object({
-  path: Type.String({ description: 'Path to the Excel (.xlsx, .xls) or CSV file' }),
+  path: Type.String({ description: 'Path to the Excel (.xlsx, .xls, .xlsm) or CSV file' }),
   sheet: Type.Optional(Type.String({ description: 'Sheet name. Defaults to first sheet.' })),
   rows: Type.Optional(Type.Number({ description: 'Max rows to return. Defaults to 100.' })),
 });
@@ -209,7 +230,7 @@ export const excelReadTool: ToolDefinition = {
   name: 'excel_read',
   label: 'Read Excel/CSV',
   description: [
-    'Read an Excel (.xlsx, .xls) or CSV file with full metadata extraction:',
+    'Read an Excel (.xlsx, .xls, .xlsm) or CSV file with full metadata extraction:',
     '- Merged cells: automatically unmerged and filled',
     '- Header row: auto-detected (handles multi-row Korean headers)',
     '- Formatting: bold (B), italic (I), background colors per row in _style column',
