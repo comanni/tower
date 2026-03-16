@@ -1,0 +1,244 @@
+import { describe, it, expect } from 'vitest';
+import fs from 'fs';
+import path from 'path';
+
+/**
+ * Pi engine tests — session persistence, tool registration, abort.
+ *
+ * These are unit/integration tests that verify Pi engine behavior
+ * without requiring a running server. Uses temp directories for isolation.
+ */
+
+// ── Helpers ──
+
+const PI_ENGINE_PATH = path.resolve(import.meta.dirname, '../pi-engine.ts');
+const PI_AGENT_TOOL_PATH = path.resolve(import.meta.dirname, '../pi-agent-tool.ts');
+const PI_FINANCE_TOOLS_PATH = path.resolve(import.meta.dirname, '../pi-finance-tools.ts');
+const PI_FINANCE_EXTRA_PATH = path.resolve(import.meta.dirname, '../pi-finance-tools-extra.ts');
+const PI_MODELS_PATH = path.resolve(import.meta.dirname, '../pi-models.json');
+
+function readSource(file: string): string {
+  return fs.readFileSync(file, 'utf-8');
+}
+
+// ── Tests ──
+
+describe('Pi engine — source contracts', () => {
+  it('pi-engine.ts exists and exports PiEngine', () => {
+    const src = readSource(PI_ENGINE_PATH);
+    expect(src).toMatch(/export class PiEngine implements Engine/);
+  });
+
+  it('uses file-based SessionManager (not inMemory)', () => {
+    const src = readSource(PI_ENGINE_PATH);
+    // Should use SessionManager.create or SessionManager.open, not just inMemory
+    expect(src).toMatch(/SessionManager\.create\(/);
+    expect(src).toMatch(/SessionManager\.open\(/);
+  });
+
+  it('claims engineSessionId for DB persistence', () => {
+    const src = readSource(PI_ENGINE_PATH);
+    // claimSessionId should be called after session creation
+    expect(src).toMatch(/callbacks\.claimSessionId/);
+  });
+
+  it('resumes from engineSessionId when available', () => {
+    const src = readSource(PI_ENGINE_PATH);
+    // Should check opts.engineSessionId and open existing session
+    expect(src).toMatch(/opts\.engineSessionId/);
+    expect(src).toMatch(/Resuming session/);
+  });
+
+  it('engine_done includes engineSessionId', () => {
+    const src = readSource(PI_ENGINE_PATH);
+    // engine_done message should include session file path
+    expect(src).toMatch(/engineSessionId.*piSessionFile|piSessionFile.*engineSessionId/s);
+  });
+
+  it('abort breaks the yield loop', () => {
+    const src = readSource(PI_ENGINE_PATH);
+    // abort() should set isRunning = false
+    expect(src).toMatch(/entry\.isRunning\s*=\s*false/);
+    // yield loop should check isRunning
+    expect(src).toMatch(/!entry\.isRunning/);
+  });
+
+  it('stores session files in {cwd}/.pi/sessions/', () => {
+    const src = readSource(PI_ENGINE_PATH);
+    expect(src).toMatch(/\.pi.*sessions/);
+  });
+});
+
+describe('Pi engine — tool registration', () => {
+  it('registers all 7 built-in tools', () => {
+    const src = readSource(PI_ENGINE_PATH);
+    for (const tool of ['readTool', 'bashTool', 'editTool', 'writeTool', 'grepTool', 'findTool', 'lsTool']) {
+      expect(src).toContain(tool);
+    }
+  });
+
+  it('registers agent custom tool', () => {
+    const src = readSource(PI_ENGINE_PATH);
+    expect(src).toMatch(/createAgentTool/);
+  });
+
+  it('registers finance tools (excel_read, excel_query)', () => {
+    const src = readSource(PI_ENGINE_PATH);
+    expect(src).toMatch(/excelReadTool/);
+    expect(src).toMatch(/excelQueryTool/);
+  });
+
+  it('registers extra tools (pdf_read, excel_write, excel_diff)', () => {
+    const src = readSource(PI_ENGINE_PATH);
+    expect(src).toMatch(/pdfReadTool/);
+    expect(src).toMatch(/excelWriteTool/);
+    expect(src).toMatch(/excelDiffTool/);
+  });
+});
+
+describe('Pi engine — ResourceLoader context injection', () => {
+  it('uses DefaultResourceLoader with appendSystemPrompt', () => {
+    const src = readSource(PI_ENGINE_PATH);
+    expect(src).toMatch(/DefaultResourceLoader/);
+    expect(src).toMatch(/appendSystemPrompt.*towerPrompt/s);
+  });
+
+  it('calls buildSystemPrompt with user identity', () => {
+    const src = readSource(PI_ENGINE_PATH);
+    expect(src).toMatch(/buildSystemPrompt/);
+    expect(src).toMatch(/opts\.userId/);
+    expect(src).toMatch(/opts\.username/);
+    expect(src).toMatch(/opts\.userRole/);
+  });
+});
+
+describe('Pi agent tool — sub-agent', () => {
+  it('pi-agent-tool.ts exports createAgentTool', () => {
+    const src = readSource(PI_AGENT_TOOL_PATH);
+    expect(src).toMatch(/export function createAgentTool/);
+  });
+
+  it('spawns child session with same tools', () => {
+    const src = readSource(PI_AGENT_TOOL_PATH);
+    expect(src).toMatch(/createAgentSession/);
+    expect(src).toMatch(/readTool.*bashTool.*editTool/);
+  });
+
+  it('collects text output from child and returns it', () => {
+    const src = readSource(PI_AGENT_TOOL_PATH);
+    expect(src).toMatch(/resultText/);
+    expect(src).toMatch(/child\.prompt/);
+    expect(src).toMatch(/child\.dispose/);
+  });
+});
+
+describe('Pi finance tools — excel_read', () => {
+  it('supports .xlsm files', () => {
+    const src = readSource(PI_FINANCE_TOOLS_PATH);
+    expect(src).toMatch(/\.xlsm/);
+    expect(src).toMatch(/keep_vba/);
+  });
+
+  it('handles Korean filename encoding via glob fallback', () => {
+    const src = readSource(PI_FINANCE_TOOLS_PATH);
+    expect(src).toMatch(/glob/);
+    expect(src).toMatch(/ext_match/);
+  });
+
+  it('extracts formulas from Excel files', () => {
+    const src = readSource(PI_FINANCE_TOOLS_PATH);
+    expect(src).toMatch(/formula_map/);
+    expect(src).toMatch(/data_only=False/);
+  });
+
+  it('resolves theme colors to readable names', () => {
+    const src = readSource(PI_FINANCE_TOOLS_PATH);
+    expect(src).toMatch(/theme_names/);
+    expect(src).toMatch(/accent-teal|accent-blue|white-bg/);
+  });
+
+  it('extracts bold/italic formatting per row', () => {
+    const src = readSource(PI_FINANCE_TOOLS_PATH);
+    expect(src).toMatch(/fc\.font\.bold/);
+    expect(src).toMatch(/fc\.font\.italic/);
+  });
+
+  it('uses runPython helper (not python3 -c for execution)', () => {
+    const src = readSource(PI_FINANCE_TOOLS_PATH);
+    expect(src).toMatch(/runPython\(pyScript/);
+    // Should not use execSync with python3 -c for script execution (comments OK)
+    expect(src).not.toMatch(/execSync\(`python3 -c/);
+  });
+});
+
+describe('Pi finance tools — extra (pdf, write, diff)', () => {
+  it('pdf_read handles Korean parenthetical negatives', () => {
+    const src = readSource(PI_FINANCE_EXTRA_PATH);
+    expect(src).toMatch(/clean_number|parenthetical/i);
+  });
+
+  it('excel_write creates formatted output with bold headers', () => {
+    const src = readSource(PI_FINANCE_EXTRA_PATH);
+    expect(src).toMatch(/Font.*bold/);
+    expect(src).toMatch(/auto_filter|freeze_panes/);
+  });
+
+  it('excel_diff supports key_column matching', () => {
+    const src = readSource(PI_FINANCE_EXTRA_PATH);
+    expect(src).toMatch(/key_col/);
+    expect(src).toMatch(/delta_pct|delta/);
+  });
+
+  it('uses runPython helper (not python3 -c)', () => {
+    const src = readSource(PI_FINANCE_EXTRA_PATH);
+    expect(src).toMatch(/runPython\(/);
+    expect(src).not.toMatch(/execSync.*python3 -c/);
+  });
+});
+
+describe('Pi models config', () => {
+  it('pi-models.json is valid JSON', () => {
+    const data = JSON.parse(fs.readFileSync(PI_MODELS_PATH, 'utf-8'));
+    expect(data.models).toBeInstanceOf(Array);
+    expect(data.models.length).toBeGreaterThan(0);
+  });
+
+  it('each model has required fields', () => {
+    const data = JSON.parse(fs.readFileSync(PI_MODELS_PATH, 'utf-8'));
+    for (const m of data.models) {
+      expect(m).toHaveProperty('provider');
+      expect(m).toHaveProperty('modelId');
+      expect(m).toHaveProperty('name');
+      expect(m).toHaveProperty('badge');
+    }
+  });
+});
+
+describe('Pi session persistence — source contracts', () => {
+  it('pi-engine uses SessionManager.create with .pi/sessions dir', () => {
+    const src = readSource(PI_ENGINE_PATH);
+    // Should create session dir and use file-based persistence
+    expect(src).toMatch(/piSessionDir.*\.pi.*sessions/s);
+    expect(src).toMatch(/mkdirSync.*piSessionDir/);
+    expect(src).toMatch(/SessionManager\.create\(.*piSessionDir\)/);
+  });
+
+  it('resume path uses SessionManager.open with engineSessionId', () => {
+    const src = readSource(PI_ENGINE_PATH);
+    expect(src).toMatch(/SessionManager\.open\(opts\.engineSessionId/);
+  });
+
+  it('claims session file path after creation', () => {
+    const src = readSource(PI_ENGINE_PATH);
+    expect(src).toMatch(/sessionMgr\.getSessionFile/);
+    expect(src).toMatch(/callbacks\.claimSessionId\(sessionFile\)/);
+  });
+
+  it('ws-handler persists engineSessionId to DB on engine_done', () => {
+    const wsHandlerSrc = fs.readFileSync(
+      path.resolve(import.meta.dirname, '../../routes/ws-handler.ts'), 'utf-8'
+    );
+    // engine_done handler should call claimClaudeSessionId
+    expect(wsHandlerSrc).toMatch(/engine_done[\s\S]*?claimClaudeSessionId/);
+  });
+});
