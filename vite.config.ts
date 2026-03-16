@@ -51,10 +51,10 @@ export default defineConfig({
       },
     }),
   ],
-  root: 'frontend',
+  root: 'packages/frontend',
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, 'frontend/src'),
+      '@': path.resolve(__dirname, 'packages/frontend/src'),
       '@tower/shared': path.resolve(__dirname, 'packages/shared/index.ts'),
     },
   },

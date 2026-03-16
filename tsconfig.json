@@ -14,11 +14,10 @@
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["frontend/src/*"],
-      "@backend/*": ["backend/*"],
+      "@/*": ["packages/frontend/src/*"],
       "@tower/shared": ["packages/shared/index.ts"]
     }
   },
-  "include": ["frontend/src", "backend", "packages", "vite-env.d.ts"],
+  "include": ["packages", "vite-env.d.ts"],
   "references": [{ "path": "./tsconfig.backend.json" }]
 }

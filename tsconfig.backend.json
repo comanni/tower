@@ -8,7 +8,7 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "outDir": "dist/backend",
-    "rootDir": "backend",
+    "rootDir": ".",
     "declaration": true,
     "baseUrl": ".",
     "paths": {
@@ -16,10 +16,10 @@
     }
   },
   "include": [
-    "backend",
+    "packages/backend",
     "packages/shared"
   ],
   "exclude": [
-    "backend/**/*.test.ts"
+    "packages/backend/**/*.test.ts"
   ]
 }
